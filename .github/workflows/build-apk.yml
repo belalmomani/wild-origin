@@ -17,9 +17,13 @@ jobs:
       - name: Setup Godot templates + Android settings
         run: |
           mkdir -p ~/.local/share/godot/export_templates/
-          if [ -d /root/.local/share/godot/export_templates/${GODOT_VERSION}.stable ] && [ "$HOME" != "/root" ]; then
-            mv /root/.local/share/godot/export_templates/${GODOT_VERSION}.stable ~/.local/share/godot/export_templates/
+          # the image keeps templates under /root; Actions runs with HOME=/github/home
+          if [ -d /root/.local/share/godot/export_templates ] && [ "$HOME" != "/root" ]; then
+            cp -r /root/.local/share/godot/export_templates/. ~/.local/share/godot/export_templates/
           fi
+          echo "HOME=$HOME GODOT_VERSION=$GODOT_VERSION"
+          find / -name "android_debug.apk" 2>/dev/null || true
+          ls ~/.local/share/godot/export_templates/
           mkdir -p ~/.config/godot
           cat > ~/.config/godot/editor_settings-4.3.tres <<EOS
           [gd_resource type="EditorSettings" format=3]
@@ -31,7 +35,7 @@ jobs:
             keytool -keyalg RSA -genkeypair -alias androiddebugkey -keypass android -keystore /root/debug.keystore -storepass android -dname "CN=Android Debug,O=Android,C=US" -validity 9999 -deststoretype pkcs12
           fi
 
-      - name: Unit checks (non-blocking until verified on a real run)
+      - name: Unit checks
         continue-on-error: true
         run: godot --headless --script tests/run_tests.gd
 
