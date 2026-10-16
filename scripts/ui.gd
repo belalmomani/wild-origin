@@ -27,7 +27,6 @@ var _tween: Tween
 func _ready() -> void:
 	layer = 10
 	menu_panel = Panel.new()
-	menu_panel.set_anchors_preset(Control.PRESET_FULL_RECT)
 	var sb := StyleBoxFlat.new()
 	sb.bg_color = Color(0.04, 0.12, 0.07, 0.94)
 	menu_panel.add_theme_stylebox_override("panel", sb)
@@ -95,6 +94,8 @@ func _put(n: String, pos: Vector2, sz: Vector2) -> void:
 
 func _layout() -> void:
 	var vp := get_viewport().get_visible_rect().size
+	menu_panel.position = Vector2.ZERO
+	menu_panel.size = vp
 	title_label.position = Vector2(0, vp.y * 0.06)
 	title_label.size = Vector2(vp.x, 200)
 	for l in [res_label, quest_label, puzzle_info]:
