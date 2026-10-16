@@ -77,10 +77,8 @@ func _start(is_new: bool) -> void:
 	player.position = GameState.player_pos
 	add_child(player)
 	builder = BuildS.new()
-	builder.player = player
 	add_child(builder)
 	builder.message.connect(ui.toast)
-	builder.state_changed.connect(func(): ui.set_build_mode(builder.active))
 	_apply_quality()
 	ui.hide_menu()
 	playing = true
@@ -91,8 +89,8 @@ func _tutorial() -> void:
 	GameState.tutorial_done = true
 	GameState.save_settings()
 	for m in ["مرحبًا! اسحب في الجهة اليسرى للحركة، واسحب يمينًا لتدوير الكاميرا",
-			"اقترب من شجرة واضغط «تفاعل» عدة مرات لجمع الخشب",
-			"اجمع 20 خشبة ثم اضغط «بناء» لتركيب أول منزل قطعة قطعة"]:
+			"اقترب من صخرة أو شجرة واضغط «تفاعل» عدة مرات لجمع الحجارة والخشب",
+			"اجمع حجارة ثم اضغط «بناء»: اختر قطعة من الأسفل واضغط «تثبيت تلقائي»"]:
 		ui.toast(m, 4.0)
 		await get_tree().create_timer(4.6).timeout
 
@@ -119,19 +117,38 @@ func _on_action(a: String) -> void:
 			GameState.save_settings()
 		"jump": player.jump_req = true
 		"interact": _interact()
-		"build":
-			builder.toggle()
-			ui.set_build_mode(builder.active)
-		"rotate": builder.rotate_step()
-		"up": builder.change_lift(1)
-		"down": builder.change_lift(-1)
-		"next": builder.next_type()
-		"place": builder.place()
-		"hint": builder.hint()
+		"build": _open_build()
+		"pclose": ui.close_puzzle()
+		"pleft": ui.puzzle.scroll_by(-1)
+		"pright": ui.puzzle.scroll_by(1)
+		"autoplace": _autoplace()
 		"torch": _torch()
 		"save":
 			_save()
 			ui.toast("تم الحفظ")
+
+func _open_build() -> void:
+	var bi: int = builder.current_index()
+	if bi < 0:
+		ui.toast("اكتمل المنزل والسور!")
+		return
+	ui.open_puzzle(builder.boards[bi])
+
+func _autoplace() -> void:
+	var pv = ui.puzzle
+	var pi: int = pv.selected
+	if pi < 0:
+		ui.toast("اختر قطعة من الأسفل أولًا")
+		return
+	var bi: int = builder.current_index()
+	pv.capture_fly_from(pi)
+	if builder.place(bi, pi):
+		pv.start_fly(pi)
+		pv.refresh()
+		if builder.remaining(bi) == 0:
+			ui.toast("اكتملت: %s ✓" % builder.boards[bi].name, 3.0)
+			await get_tree().create_timer(0.8).timeout
+			ui.close_puzzle()
 
 func _torch() -> void:
 	if not GameState.torch_owned:
@@ -165,8 +182,8 @@ func _interact() -> void:
 		GameState.add("wood", 3)
 		ui.toast("+3 خشب")
 	else:
-		GameState.add("stone", 2)
-		ui.toast("+2 حجر")
+		GameState.add("stone", 6)
+		ui.toast("+6 حجارة")
 	GameState.xp += 1
 	best.queue_free()
 
@@ -187,33 +204,16 @@ func _process(d: float) -> void:
 func _hud() -> void:
 	var g := GameState
 	var q := ""
-	match g.phase:
-		0:
-			q = "اجمع الخشب: %d/20" % g.count("wood")
-			if g.count("wood") >= 20:
-				g.phase = 1
-				ui.toast("ممتاز! اضغط «بناء» وابدأ بتركيب المنزل", 4.0)
-		1:
-			var r: int = builder.remaining("h")
-			q = "ابنِ المنزل — قطع متبقية: %d" % r
-			if r == 0:
-				g.phase = 2
-				ui.toast("اكتمل المنزل! اجمع الحجارة لبناء السور", 4.0)
-		2:
-			q = "اجمع الحجارة: %d/19" % g.count("stone")
-			if g.count("stone") >= 19:
-				g.phase = 3
-				ui.toast("اضغط «بناء» لتركيب أحجار السور", 4.0)
-		3:
-			var r2: int = builder.remaining("f")
-			q = "ابنِ السور — أحجار متبقية: %d" % r2
-			if r2 == 0:
-				g.phase = 4
-		_:
-			q = "اكتملت المرحلة الأولى (الصيد والمزرعة قيد التطوير)"
+	var bi: int = builder.current_index()
+	if bi < 0:
+		q = "اكتمل المنزل والسور! (الصيد والمزرعة قيد التطوير)"
+	else:
+		var b: Dictionary = builder.boards[bi]
+		var cost: String = b.pieces[0].cost
+		q = "%s — متبقي %d قطعة — لديك %d %s. اجمع ثم اضغط «بناء»" % [b.name, builder.remaining(bi), g.count(cost), "حجارة" if cost == "stone" else "خشب"]
 	var hr := int(g.time_of_day)
 	var res := "خشب %d | حجر %d | مستوى %d | الوقت %02d:%02d | الصحة 100" % [g.count("wood"), g.count("stone"), g.level(), hr, int((g.time_of_day - hr) * 60.0)]
-	ui.set_hud(res, q, builder.info_text())
+	ui.set_hud(res, q)
 
 func _save() -> void:
 	if not playing:

@@ -1,24 +1,27 @@
 extends CanvasLayer
-## Touch UI built in code: floating joystick, camera drag, big buttons, Arabic RTL labels, menu.
-## All touches are routed through _input so joystick + buttons work simultaneously (multi-touch).
+## Touch UI built in code: floating joystick, camera drag, buttons, Arabic RTL labels, menu, puzzle overlay.
+## All touches go through _input so joystick + buttons work simultaneously (multi-touch).
 signal action(name: String)
+const PuzzleS := preload("res://scripts/puzzle_view.gd")
 
 var buttons := {}
 var menu_btns: Array = []
 var hud_btns: Array = []
-var build_btns: Array = []
+var puzzle_btns: Array = []
 var menu_panel: Panel
+var puzzle: Control
 var title_label: Label
 var res_label: Label
 var quest_label: Label
 var toast_label: Label
-var build_label: Label
+var puzzle_info: Label
 var stick_base: Panel
 var stick_knob: Panel
 var stick_id := -1
 var cam_id := -1
 var stick_center := Vector2.ZERO
 var in_menu := true
+var in_puzzle := false
 var _tween: Tween
 
 func _ready() -> void:
@@ -29,18 +32,21 @@ func _ready() -> void:
 	sb.bg_color = Color(0.04, 0.12, 0.07, 0.94)
 	menu_panel.add_theme_stylebox_override("panel", sb)
 	add_child(menu_panel)
+	puzzle = PuzzleS.new()
+	puzzle.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	puzzle.visible = false
+	add_child(puzzle)
 	title_label = _label(64)
 	title_label.text = "WILD ORIGIN\nبداية العالم"
 	res_label = _label(26)
 	quest_label = _label(26)
 	toast_label = _label(30)
-	build_label = _label(24)
+	puzzle_info = _label(28)
 	stick_base = _circle(180, Color(1, 1, 1, 0.18))
 	stick_knob = _circle(80, Color(1, 1, 1, 0.45))
 	for n in [["new", "لعبة جديدة", "menu"], ["continue", "متابعة اللعبة", "menu"], ["quality", "الجودة", "menu"], ["sound", "الصوت", "menu"],
 			["jump", "قفز", "hud"], ["interact", "تفاعل", "hud"], ["build", "بناء", "hud"], ["torch", "مشعل", "hud"], ["save", "حفظ", "hud"],
-			["rotate", "تدوير", "build"], ["up", "▲ أعلى", "build"], ["down", "▼ أسفل", "build"], ["next", "القطعة التالية", "build"],
-			["hint", "مساعدة", "build"], ["place", "تثبيت", "build"]]:
+			["autoplace", "تثبيت تلقائي", "puzzle"], ["pclose", "إغلاق", "puzzle"], ["pleft", "◀", "puzzle"], ["pright", "▶", "puzzle"]]:
 		_btn(n[0], n[1], n[2])
 	get_viewport().size_changed.connect(_layout)
 	_layout()
@@ -81,7 +87,7 @@ func _btn(n: String, text: String, group: String) -> void:
 	match group:
 		"menu": menu_btns.append(b)
 		"hud": hud_btns.append(b)
-		_: build_btns.append(b)
+		_: puzzle_btns.append(b)
 
 func _put(n: String, pos: Vector2, sz: Vector2) -> void:
 	buttons[n].position = pos
@@ -91,12 +97,11 @@ func _layout() -> void:
 	var vp := get_viewport().get_visible_rect().size
 	title_label.position = Vector2(0, vp.y * 0.06)
 	title_label.size = Vector2(vp.x, 200)
-	for l in [res_label, quest_label]:
+	for l in [res_label, quest_label, puzzle_info]:
 		l.size = Vector2(vp.x, 40)
 	res_label.position = Vector2(0, 8)
 	quest_label.position = Vector2(0, 52)
-	build_label.position = Vector2(0, 100)
-	build_label.size = Vector2(vp.x, 80)
+	puzzle_info.position = Vector2(0, 14)
 	toast_label.position = Vector2(0, vp.y * 0.55)
 	toast_label.size = Vector2(vp.x, 60)
 	var cx := vp.x / 2.0 - 190.0
@@ -108,12 +113,11 @@ func _layout() -> void:
 	_put("build", Vector2(vp.x - 170, vp.y - 280), Vector2(140, 100))
 	_put("torch", Vector2(vp.x - 320, vp.y - 230), Vector2(130, 100))
 	_put("save", Vector2(20, 10), Vector2(110, 60))
-	_put("rotate", Vector2(20, vp.y * 0.26), Vector2(150, 85))
-	_put("up", Vector2(20, vp.y * 0.26 + 95), Vector2(150, 85))
-	_put("down", Vector2(20, vp.y * 0.26 + 190), Vector2(150, 85))
-	_put("next", Vector2(vp.x - 230, vp.y * 0.2), Vector2(210, 85))
-	_put("hint", Vector2(vp.x - 230, vp.y * 0.2 + 95), Vector2(210, 85))
-	_put("place", Vector2(vp.x - 340, vp.y - 400), Vector2(160, 110))
+	_put("autoplace", Vector2(vp.x / 2.0 - 170.0, vp.y - 110.0), Vector2(340, 90))
+	_put("pclose", Vector2(20, vp.y - 110.0), Vector2(160, 90))
+	_put("pleft", Vector2(vp.x * 0.04, vp.y * 0.7), Vector2(56, 110))
+	_put("pright", Vector2(vp.x * 0.96 - 56.0, vp.y * 0.7), Vector2(56, 110))
+	puzzle.layout(vp)
 
 func show_menu(has_save: bool) -> void:
 	in_menu = true
@@ -124,22 +128,29 @@ func hide_menu() -> void:
 	in_menu = false
 	_set_mode()
 
+func open_puzzle(board: Dictionary) -> void:
+	in_puzzle = true
+	_layout()
+	puzzle.open(board)
+	_set_mode()
+
+func close_puzzle() -> void:
+	in_puzzle = false
+	puzzle.visible = false
+	_set_mode()
+
 func _set_mode() -> void:
 	menu_panel.visible = in_menu
 	title_label.visible = in_menu
 	for b in menu_btns:
 		b.visible = in_menu
 	for b in hud_btns:
-		b.visible = not in_menu
-	for b in build_btns:
-		b.visible = false
-	for l in [res_label, quest_label, build_label]:
-		l.visible = not in_menu
-
-func set_build_mode(on: bool) -> void:
-	for b in build_btns:
-		b.visible = on and not in_menu
-	build_label.text = "" if not on else build_label.text
+		b.visible = not in_menu and not in_puzzle
+	for b in puzzle_btns:
+		b.visible = in_puzzle
+	puzzle_info.visible = in_puzzle
+	for l in [res_label, quest_label]:
+		l.visible = not in_menu and not in_puzzle
 
 func set_quality_text(q: int) -> void:
 	buttons["quality"].text = "الجودة: " + ["منخفضة", "متوسطة", "عالية"][q]
@@ -147,10 +158,9 @@ func set_quality_text(q: int) -> void:
 func set_sound_text(on: bool) -> void:
 	buttons["sound"].text = "الصوت: " + ("مفعّل" if on else "مكتوم")
 
-func set_hud(res: String, quest: String, build: String) -> void:
+func set_hud(res: String, quest: String) -> void:
 	res_label.text = res
 	quest_label.text = quest
-	build_label.text = build
 
 func toast(msg: String, secs: float = 2.5) -> void:
 	toast_label.text = msg
@@ -160,6 +170,10 @@ func toast(msg: String, secs: float = 2.5) -> void:
 	_tween = create_tween()
 	_tween.tween_interval(secs)
 	_tween.tween_property(toast_label, "modulate:a", 0.0, 0.6)
+
+func _process(_d: float) -> void:
+	if in_puzzle:
+		puzzle_info.text = puzzle.info_text()
 
 func _input(e: InputEvent) -> void:
 	if e is InputEventScreenTouch:
@@ -180,6 +194,9 @@ func _press(idx: int, pos: Vector2) -> void:
 			action.emit(n)
 			return
 	if in_menu:
+		return
+	if in_puzzle:
+		puzzle.tray_hit(pos)
 		return
 	var vp := get_viewport().get_visible_rect().size
 	if pos.x < vp.x * 0.4 and pos.y > vp.y * 0.35 and stick_id == -1:

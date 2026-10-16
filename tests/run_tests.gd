@@ -3,22 +3,28 @@ extends SceneTree
 func _init() -> void:
 	var fails := 0
 	var D = load("res://scripts/building_data.gd")
-	var s: Array = D.make_slots(Vector3.ZERO)
-	var h := s.filter(func(x): return x.id.begins_with("h")).size()
-	var f := s.filter(func(x): return x.id.begins_with("f")).size()
-	if h != 20:
-		print("FAIL house slots: ", h); fails += 1
-	if f != 19:
-		print("FAIL fence slots: ", f); fails += 1
+	var boards: Array = D.make_boards()
+	if boards.size() != 9:
+		print("FAIL boards: ", boards.size()); fails += 1
+	if boards[2].pieces.size() != 50:
+		print("FAIL back facade should have 50 pieces: ", boards[2].pieces.size()); fails += 1
+	var ids := {}
+	for b in boards:
+		for p in b.pieces:
+			if ids.has(p.id):
+				print("FAIL duplicate id ", p.id); fails += 1
+			ids[p.id] = true
+			if Geometry2D.triangulate_polygon(p.mesh_poly).size() < 3:
+				print("FAIL cannot triangulate ", p.id); fails += 1
+	print("pieces per board: ", boards.map(func(b): return b.pieces.size()))
 	var gs = load("res://scripts/game_state.gd").new()
 	gs.add("wood", 5)
-	gs.placed["h1"] = true
+	gs.placed["F0_1"] = true
 	gs.removed[1003] = true
-	gs.phase = 2
 	var d = JSON.parse_string(JSON.stringify(gs.to_dict()))
 	gs.reset()
 	gs.from_dict(d)
-	if gs.count("wood") != 5 or not gs.placed.has("h1") or not gs.removed.has(1003) or gs.phase != 2:
+	if gs.count("wood") != 5 or not gs.placed.has("F0_1") or not gs.removed.has(1003):
 		print("FAIL save round-trip"); fails += 1
 	if gs.spend("stone", 1):
 		print("FAIL spend with no stone"); fails += 1
