@@ -9,7 +9,7 @@ var menu_btns: Array = []
 var hud_btns: Array = []
 var puzzle_btns: Array = []
 var menu_panel: Panel
-var puzzle: Control
+var puzzle  # puzzle_view.gd instance (untyped on purpose)
 var title_label: Label
 var res_label: Label
 var quest_label: Label

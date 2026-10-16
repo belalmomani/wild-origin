@@ -96,8 +96,8 @@ func _draw() -> void:
 	draw_rect(Rect2(Vector2.ZERO, size), Color(0.07, 0.09, 0.11, 0.98))
 	bscale = minf(board_rect.size.x / board.w, board_rect.size.y / board.h)
 	var bl := _to_screen(Vector2(-board.w * 0.5, 0.0))
-	var tr := _to_screen(Vector2(board.w * 0.5, board.h))
-	draw_rect(Rect2(bl.x, tr.y, tr.x - bl.x, bl.y - tr.y), Color(0.16, 0.18, 0.2))
+	var trp := _to_screen(Vector2(board.w * 0.5, board.h))
+	draw_rect(Rect2(bl.x, trp.y, trp.x - bl.x, bl.y - trp.y), Color(0.16, 0.18, 0.2))
 	for o in board.openings:
 		var r: Rect2 = o
 		var a := _to_screen(r.position)
@@ -142,8 +142,8 @@ func _tray_piece(piece: Dictionary, ctr: Vector2) -> void:
 	var mx := Vector2(-1e9, -1e9)
 	for v in piece.poly:
 		c += v
-		mn = mn.min(v)
-		mx = mx.max(v)
+		mn = Vector2(minf(mn.x, v.x), minf(mn.y, v.y))
+		mx = Vector2(maxf(mx.x, v.x), maxf(mx.y, v.y))
 	c /= piece.poly.size()
 	var ts := 76.0 / maxf(mx.x - mn.x, mx.y - mn.y)
 	var pts := PackedVector2Array()

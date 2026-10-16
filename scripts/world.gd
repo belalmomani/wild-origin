@@ -133,7 +133,8 @@ func _tree(pos: Vector3, id: int, s: float) -> void:
 				b.add_child(fr)
 				tree_meshes.append(fr)
 		_:
-			var c := [Color(0.16, 0.4, 0.15), Color(0.85, 0.65, 0.12), Color(0), Color(0.9, 0.87, 0.78), Color(0), Color(0.75, 0.28, 0.12)][v]
+			var cols: Array = [Color(0.16, 0.4, 0.15), Color(0.85, 0.65, 0.12), Color.BLACK, Color(0.9, 0.87, 0.78), Color.BLACK, Color(0.75, 0.28, 0.12)]
+			var c: Color = cols[v]
 			_blob(b, Vector3(0, top + 0.9 * s, 0), 1.6 * s, c)
 			_blob(b, Vector3(1.0 * s, top + 0.3 * s, 0.4 * s), 1.1 * s, c.darkened(0.1))
 			_blob(b, Vector3(-0.9 * s, top + 0.4 * s, -0.5 * s), 1.2 * s, c.lightened(0.08))
