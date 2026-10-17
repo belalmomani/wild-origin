@@ -18,6 +18,9 @@ var puzzle_info: Label
 var stick_base: Panel
 var stick_knob: Panel
 var stick_id := -1
+var puzzle_id := -1
+var bar_top: ColorRect
+var bar_bot: ColorRect
 var cam_id := -1
 var stick_center := Vector2.ZERO
 var in_menu := true
@@ -41,11 +44,18 @@ func _ready() -> void:
 	quest_label = _label(26)
 	toast_label = _label(30)
 	puzzle_info = _label(28)
+	bar_top = ColorRect.new()
+	bar_bot = ColorRect.new()
+	for bar in [bar_top, bar_bot]:
+		bar.color = Color.BLACK
+		bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		bar.visible = false
+		add_child(bar)
 	stick_base = _circle(180, Color(1, 1, 1, 0.18))
 	stick_knob = _circle(80, Color(1, 1, 1, 0.45))
 	for n in [["new", "لعبة جديدة", "menu"], ["continue", "متابعة اللعبة", "menu"], ["quality", "الجودة", "menu"], ["sound", "الصوت", "menu"],
 			["jump", "قفز", "hud"], ["interact", "تفاعل", "hud"], ["build", "بناء", "hud"], ["torch", "مشعل", "hud"], ["save", "حفظ", "hud"],
-			["autoplace", "تثبيت تلقائي", "puzzle"], ["pclose", "إغلاق", "puzzle"], ["pleft", "◀", "puzzle"], ["pright", "▶", "puzzle"]]:
+			["hint", "تلميح", "puzzle"], ["pclose", "إغلاق", "puzzle"], ["pleft", "◀", "puzzle"], ["pright", "▶", "puzzle"]]:
 		_btn(n[0], n[1], n[2])
 	get_viewport().size_changed.connect(_layout)
 	_layout()
@@ -114,7 +124,11 @@ func _layout() -> void:
 	_put("build", Vector2(vp.x - 170, vp.y - 280), Vector2(140, 100))
 	_put("torch", Vector2(vp.x - 320, vp.y - 230), Vector2(130, 100))
 	_put("save", Vector2(20, 10), Vector2(110, 60))
-	_put("autoplace", Vector2(vp.x / 2.0 - 170.0, vp.y - 110.0), Vector2(340, 90))
+	bar_top.position = Vector2.ZERO
+	bar_top.size = Vector2(vp.x, vp.y * 0.12)
+	bar_bot.position = Vector2(0, vp.y * 0.88)
+	bar_bot.size = Vector2(vp.x, vp.y * 0.12)
+	_put("hint", Vector2(vp.x / 2.0 - 170.0, vp.y - 110.0), Vector2(340, 90))
 	_put("pclose", Vector2(20, vp.y - 110.0), Vector2(160, 90))
 	_put("pleft", Vector2(vp.x * 0.04, vp.y * 0.7), Vector2(56, 110))
 	_put("pright", Vector2(vp.x * 0.96 - 56.0, vp.y * 0.7), Vector2(56, 110))
@@ -163,6 +177,15 @@ func set_hud(res: String, quest: String) -> void:
 	res_label.text = res
 	quest_label.text = quest
 
+func cinematic_bars(secs: float) -> void:
+	for bar in [bar_top, bar_bot]:
+		bar.visible = true
+		bar.modulate.a = 1.0
+		var t := create_tween()
+		t.tween_interval(secs)
+		t.tween_property(bar, "modulate:a", 0.0, 0.8)
+		t.tween_callback(func(): bar.visible = false)
+
 func toast(msg: String, secs: float = 2.5) -> void:
 	toast_label.text = msg
 	toast_label.modulate.a = 1.0
@@ -181,9 +204,11 @@ func _input(e: InputEvent) -> void:
 		if e.pressed:
 			_press(e.index, e.position)
 		else:
-			_release(e.index)
+			_release(e.index, e.position)
 	elif e is InputEventScreenDrag:
-		if e.index == stick_id:
+		if e.index == puzzle_id:
+			puzzle.drag(e.position)
+		elif e.index == stick_id:
 			_stick(e.position)
 		elif e.index == cam_id:
 			GameState.cam_delta += e.relative
@@ -197,7 +222,8 @@ func _press(idx: int, pos: Vector2) -> void:
 	if in_menu:
 		return
 	if in_puzzle:
-		puzzle.tray_hit(pos)
+		if puzzle.press(pos):
+			puzzle_id = idx
 		return
 	var vp := get_viewport().get_visible_rect().size
 	if pos.x < vp.x * 0.4 and pos.y > vp.y * 0.35 and stick_id == -1:
@@ -210,8 +236,11 @@ func _press(idx: int, pos: Vector2) -> void:
 	elif cam_id == -1:
 		cam_id = idx
 
-func _release(idx: int) -> void:
-	if idx == stick_id:
+func _release(idx: int, pos: Vector2) -> void:
+	if idx == puzzle_id:
+		puzzle_id = -1
+		puzzle.release(pos)
+	elif idx == stick_id:
 		stick_id = -1
 		GameState.move = Vector2.ZERO
 		stick_base.visible = false

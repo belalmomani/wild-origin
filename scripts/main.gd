@@ -24,6 +24,8 @@ func _ready() -> void:
 	ui = UIS.new()
 	add_child(ui)
 	ui.action.connect(_on_action)
+	ui.puzzle.dropped.connect(_on_drop)
+	Ads.reward_granted.connect(func(pl): if pl == "hint": ui.puzzle.show_hint())
 	ui.set_quality_text(GameState.quality)
 	ui.set_sound_text(not GameState.muted)
 	ui.show_menu(GameState.has_save())
@@ -38,7 +40,7 @@ func _smoke() -> void:
 	GameState.add("stone", 60)
 	ui.open_puzzle(builder.boards[0])
 	for i in 6:
-		_autoplace()
+		_on_drop(ui.puzzle.tray[0])
 	await get_tree().create_timer(1.0).timeout
 	print("SMOKE OK pieces placed: ", GameState.placed.size())
 	get_tree().quit(0)
@@ -56,6 +58,10 @@ func _setup_env() -> void:
 	env.sky = s
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
 	env.fog_enabled = true
+	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
+	env.adjustment_enabled = true
+	env.adjustment_contrast = 1.08
+	env.adjustment_saturation = 1.12
 	var we := WorldEnvironment.new()
 	we.environment = env
 	add_child(we)
@@ -95,6 +101,8 @@ func _start(is_new: bool) -> void:
 	builder.message.connect(ui.toast)
 	_apply_quality()
 	ui.hide_menu()
+	player.play_intro()
+	ui.cinematic_bars(3.5)
 	playing = true
 	if not GameState.tutorial_done:
 		_tutorial()
@@ -104,7 +112,7 @@ func _tutorial() -> void:
 	GameState.save_settings()
 	for m in ["مرحبًا! اسحب في الجهة اليسرى للحركة، واسحب يمينًا لتدوير الكاميرا",
 			"اقترب من صخرة أو شجرة واضغط «تفاعل» عدة مرات لجمع الحجارة والخشب",
-			"اجمع حجارة ثم اضغط «بناء»: اختر قطعة من الأسفل واضغط «تثبيت تلقائي»"]:
+			"اجمع حجارة ثم اضغط «بناء»: اسحب القطعة من الأسفل وأفلتها في مكانها"]:
 		ui.toast(m, 4.0)
 		await get_tree().create_timer(4.6).timeout
 
@@ -135,7 +143,7 @@ func _on_action(a: String) -> void:
 		"pclose": ui.close_puzzle()
 		"pleft": ui.puzzle.scroll_by(-1)
 		"pright": ui.puzzle.scroll_by(1)
-		"autoplace": _autoplace()
+		"hint": _hint()
 		"torch": _torch()
 		"save":
 			_save()
@@ -148,21 +156,27 @@ func _open_build() -> void:
 		return
 	ui.open_puzzle(builder.boards[bi])
 
-func _autoplace() -> void:
-	var pv = ui.puzzle
-	var pi: int = pv.selected
-	if pi < 0:
-		ui.toast("اختر قطعة من الأسفل أولًا")
-		return
+func _on_drop(pi: int) -> void:
 	var bi: int = builder.current_index()
-	pv.capture_fly_from(pi)
+	if bi < 0:
+		return
 	if builder.place(bi, pi):
-		pv.start_fly(pi)
-		pv.refresh()
+		ui.puzzle.refresh()
 		if builder.remaining(bi) == 0:
 			ui.toast("اكتملت: %s ✓" % builder.boards[bi].name, 3.0)
 			await get_tree().create_timer(0.8).timeout
 			ui.close_puzzle()
+
+func _hint() -> void:
+	if GameState.hints_left > 0:
+		GameState.hints_left -= 1
+		ui.puzzle.show_hint()
+		ui.toast("الموضع الصحيح يومض — تبقى %d تلميحات" % GameState.hints_left)
+	elif Ads.is_available():
+		ui.toast("جارٍ تحميل إعلان المكافأة%s" % (" (محاكاة تطوير)" if Ads.is_simulated() else ""))
+		Ads.show_rewarded("hint")
+	else:
+		ui.toast("نفدت التلميحات ولا يتوفر إعلان الآن — جرّب بنفسك!")
 
 func _torch() -> void:
 	if not GameState.torch_owned:

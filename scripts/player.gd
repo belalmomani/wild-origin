@@ -9,6 +9,14 @@ var pivot: Node3D
 var body: Node3D
 var cam: Camera3D
 var torch: OmniLight3D
+var arm: SpringArm3D
+var intro_lock := false
+const HERO_PATH := "res://assets/hero/hero.glb"
+var hero: Node3D
+var hero_anim: AnimationPlayer
+var a_idle := ""
+var a_walk := ""
+var a_run := ""
 var legL: Node3D
 var legR: Node3D
 var armL: Node3D
@@ -67,6 +75,60 @@ func _build_body() -> void:
 	_box(armR, Vector3(0.05, 0.7, 0.05), Vector3(0, -0.7, -0.08), Color(0.5, 0.33, 0.18))  # axe handle
 	_box(armR, Vector3(0.05, 0.16, 0.28), Vector3(0, -1.0, -0.2), Color(0.6, 0.6, 0.65))   # axe head
 
+func _try_hero() -> bool:
+	# Optional realistic character: put a rigged .glb at assets/hero/hero.glb (see assets/hero/README.md)
+	if not ResourceLoader.exists(HERO_PATH):
+		return false
+	var scn = load(HERO_PATH)
+	if not (scn is PackedScene):
+		return false
+	hero = scn.instantiate()
+	hero.rotation.y = PI   # most models face +Z, the game moves toward -Z
+	body.add_child(hero)
+	var aps := hero.find_children("*", "AnimationPlayer", true, false)
+	if aps.size() > 0:
+		hero_anim = aps[0]
+		var names := hero_anim.get_animation_list()
+		for n in names:
+			var l := String(n).to_lower()
+			if a_idle == "" and "idle" in l:
+				a_idle = n
+			elif a_walk == "" and "walk" in l:
+				a_walk = n
+			elif a_run == "" and "run" in l:
+				a_run = n
+		if a_walk == "" and names.size() > 0:
+			a_walk = names[0]
+	return true
+
+func _hero_anim(spd: float) -> void:
+	if hero_anim == null:
+		return
+	var moving := spd > 0.4
+	var want := a_walk
+	if moving and spd > SPEED * 0.85 and a_run != "":
+		want = a_run
+	elif not moving and a_idle != "":
+		want = a_idle
+	if want == "":
+		return
+	if hero_anim.current_animation != want:
+		hero_anim.get_animation(want).loop_mode = Animation.LOOP_LINEAR
+		hero_anim.play(want, 0.2)
+	hero_anim.speed_scale = 1.0 if (moving or want == a_idle) else 0.0
+
+func play_intro() -> void:
+	# cinematic fly-in: wide high shot swinging to the over-the-shoulder view
+	intro_lock = true
+	cam_yaw = 1.4
+	cam_pitch = -0.12
+	arm.spring_length = 11.0
+	var t := create_tween().set_parallel(true).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	t.tween_property(self, "cam_yaw", 0.0, 3.5)
+	t.tween_property(self, "cam_pitch", -0.3, 3.5)
+	t.tween_property(arm, "spring_length", 4.2, 3.5)
+	t.finished.connect(func(): intro_lock = false)
+
 func _ready() -> void:
 	var col := CollisionShape3D.new()
 	var cap := CapsuleShape3D.new()
@@ -77,14 +139,24 @@ func _ready() -> void:
 	add_child(col)
 	body = Node3D.new()
 	add_child(body)
-	_build_body()
-	pivot = Node3D.new()
-	pivot.position.y = 1.5
-	add_child(pivot)
+	if not _try_hero():
+		_build_body()
+	arm = SpringArm3D.new()
+	arm.position.y = 1.55
+	arm.spring_length = 4.2
+	var ss := SphereShape3D.new()
+	ss.radius = 0.25
+	arm.shape = ss
+	arm.margin = 0.1
+	add_child(arm)
+	arm.add_excluded_object(get_rid())
+	pivot = arm
 	cam = Camera3D.new()
-	cam.position.z = 5.0
+	cam.fov = 62.0
 	cam.far = 300.0
-	pivot.add_child(cam)
+	cam.h_offset = 0.45   # over-the-shoulder framing
+	cam.v_offset = 0.1
+	arm.add_child(cam)
 	cam.make_current()
 	torch = OmniLight3D.new()
 	torch.omni_range = 12.0
@@ -96,10 +168,11 @@ func _ready() -> void:
 func _physics_process(d: float) -> void:
 	var cd := GameState.cam_delta
 	GameState.cam_delta = Vector2.ZERO
-	cam_yaw -= cd.x * 0.006
-	cam_pitch = clampf(cam_pitch - cd.y * 0.006, -1.2, 0.3)
+	if not intro_lock:
+		cam_yaw -= cd.x * 0.006
+		cam_pitch = clampf(cam_pitch - cd.y * 0.006, -1.2, 0.3)
 	pivot.rotation = Vector3(cam_pitch, cam_yaw, 0.0)
-	var m := GameState.move
+	var m := GameState.move if not intro_lock else Vector2.ZERO
 	var dir := Vector3(m.x, 0, m.y).rotated(Vector3.UP, cam_yaw)
 	velocity.x = dir.x * SPEED
 	velocity.z = dir.z * SPEED
@@ -116,11 +189,14 @@ func _physics_process(d: float) -> void:
 	var spd := Vector2(velocity.x, velocity.z).length()
 	var amp := clampf(spd / SPEED, 0.0, 1.0)
 	anim_t += d * (4.0 + spd * 1.3)
-	var sw := sin(anim_t) * 0.75 * amp
-	legL.rotation.x = sw
-	legR.rotation.x = -sw
-	armL.rotation.x = -sw
-	armR.rotation.x = sw * 0.6 - 0.25
+	if hero:
+		_hero_anim(spd)
+	else:
+		var sw := sin(anim_t) * 0.75 * amp
+		legL.rotation.x = sw
+		legR.rotation.x = -sw
+		armL.rotation.x = -sw
+		armR.rotation.x = sw * 0.6 - 0.25
 	position.x = clampf(position.x, -96.0, 96.0)
 	position.z = clampf(position.z, -96.0, 96.0)
 	if position.y < -30.0:
