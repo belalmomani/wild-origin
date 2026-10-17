@@ -41,6 +41,11 @@ func _smoke() -> void:
 	ui.open_puzzle(builder.boards[0])
 	for i in 6:
 		_on_drop(ui.puzzle.tray[0])
+	for a in ["chop", "gather", "build", "aim"]:
+		player.play_action(a, 0.3)
+		await get_tree().create_timer(0.4).timeout
+	player.crouch = true
+	await get_tree().create_timer(0.3).timeout
 	await get_tree().create_timer(1.0).timeout
 	print("SMOKE OK pieces placed: ", GameState.placed.size())
 	get_tree().quit(0)
@@ -138,6 +143,9 @@ func _on_action(a: String) -> void:
 			ui.set_sound_text(not GameState.muted)
 			GameState.save_settings()
 		"jump": player.jump_req = true
+		"crouch":
+			player.crouch = not player.crouch
+			ui.toast("انحناء" if player.crouch else "وقوف", 1.0)
 		"interact": _interact()
 		"build": _open_build()
 		"pclose": ui.close_puzzle()
@@ -166,6 +174,7 @@ func _on_drop(pi: int) -> void:
 			ui.toast("اكتملت: %s ✓" % builder.boards[bi].name, 3.0)
 			await get_tree().create_timer(0.8).timeout
 			ui.close_puzzle()
+			player.play_action("build", 1.6)
 
 func _hint() -> void:
 	if GameState.hints_left > 0:
@@ -200,6 +209,7 @@ func _interact() -> void:
 	if best == null:
 		ui.toast("لا يوجد شيء قريب للتفاعل")
 		return
+	player.play_action("chop" if best.is_in_group("tree") else "gather", 0.9)
 	var hp: int = int(best.get_meta("hp")) - 1
 	if hp > 0:
 		best.set_meta("hp", hp)
@@ -211,6 +221,7 @@ func _interact() -> void:
 		ui.toast("+3 خشب")
 	else:
 		GameState.add("stone", 6)
+		player.carry_t = 6.0
 		ui.toast("+6 حجارة")
 	GameState.xp += 1
 	best.queue_free()

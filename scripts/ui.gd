@@ -54,7 +54,7 @@ func _ready() -> void:
 	stick_base = _circle(180, Color(1, 1, 1, 0.18))
 	stick_knob = _circle(80, Color(1, 1, 1, 0.45))
 	for n in [["new", "لعبة جديدة", "menu"], ["continue", "متابعة اللعبة", "menu"], ["quality", "الجودة", "menu"], ["sound", "الصوت", "menu"],
-			["jump", "قفز", "hud"], ["interact", "تفاعل", "hud"], ["build", "بناء", "hud"], ["torch", "مشعل", "hud"], ["save", "حفظ", "hud"],
+			["jump", "قفز", "hud"], ["interact", "تفاعل", "hud"], ["build", "بناء", "hud"], ["torch", "مشعل", "hud"], ["crouch", "انحناء", "hud"], ["save", "حفظ", "hud"],
 			["hint", "تلميح", "puzzle"], ["pclose", "إغلاق", "puzzle"], ["pleft", "◀", "puzzle"], ["pright", "▶", "puzzle"]]:
 		_btn(n[0], n[1], n[2])
 	get_viewport().size_changed.connect(_layout)
@@ -123,6 +123,7 @@ func _layout() -> void:
 	_put("interact", Vector2(vp.x - 300, vp.y - 110), Vector2(130, 100))
 	_put("build", Vector2(vp.x - 170, vp.y - 280), Vector2(140, 100))
 	_put("torch", Vector2(vp.x - 320, vp.y - 230), Vector2(130, 100))
+	_put("crouch", Vector2(vp.x - 460, vp.y - 110), Vector2(130, 100))
 	_put("save", Vector2(20, 10), Vector2(110, 60))
 	bar_top.position = Vector2.ZERO
 	bar_top.size = Vector2(vp.x, vp.y * 0.12)

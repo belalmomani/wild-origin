@@ -3,6 +3,7 @@ extends Control
 ## Slots are only faint outlines (no auto-fill). A limited "hint" blinks the correct hole.
 signal dropped(pi: int)
 const D := preload("res://scripts/building_data.gd")
+const M := preload("res://scripts/mats.gd")
 const CELL := 100.0
 var board: Dictionary = {}
 var tray: Array = []
@@ -16,6 +17,18 @@ var hint_t := 0.0
 var board_rect := Rect2()
 var tray_rect := Rect2()
 var bscale := 1.0
+
+func _ready() -> void:
+	texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
+
+func _fill(pts: PackedVector2Array, src: PackedVector2Array, col: Color, stone: bool) -> void:
+	if stone:
+		var uvs := PackedVector2Array()
+		for v in src:
+			uvs.append(Vector2(v.x, -v.y) * 0.45)   # same grain whether in tray, in hand or placed
+		draw_colored_polygon(pts, col, uvs, M.tex("rock_a"))
+	else:
+		draw_colored_polygon(pts, col)
 
 func layout(vp: Vector2) -> void:
 	position = Vector2.ZERO
@@ -138,7 +151,7 @@ func _draw() -> void:
 		var p: Dictionary = board.pieces[i]
 		var pts := _screen_poly(p.poly)
 		if GameState.placed.has(p.id):
-			draw_colored_polygon(pts, D.piece_color(p))
+			_fill(pts, p.poly, D.piece_color(p).lightened(0.45), p.cost == "stone")
 			_outline(pts, Color(0, 0, 0, 0.6), 1.5)
 		elif hint_t > 0.0 and i == hint_idx:
 			draw_colored_polygon(pts, Color(1, 0.9, 0.2, 0.25 + 0.5 * blink))
@@ -175,9 +188,9 @@ func _piece_at(piece: Dictionary, ctr: Vector2, fit: float, alpha: float) -> voi
 	var pts := PackedVector2Array()
 	for v in piece.poly:
 		pts.append(Vector2((v.x - c.x) * ts, -(v.y - c.y) * ts) + ctr)
-	var col := D.piece_color(piece)
+	var col := D.piece_color(piece).lightened(0.45)
 	col.a = alpha
 	if GameState.count(piece.cost) == 0:
 		col.a *= 0.45
-	draw_colored_polygon(pts, col)
+	_fill(pts, piece.poly, col, piece.cost == "stone")
 	_outline(pts, Color(0, 0, 0, 0.75), 2.0)

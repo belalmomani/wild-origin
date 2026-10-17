@@ -16,6 +16,14 @@ func _init() -> void:
 			ids[p.id] = true
 			if Geometry2D.triangulate_polygon(p.mesh_poly).size() < 3:
 				print("FAIL cannot triangulate ", p.id); fails += 1
+	var G = load("res://scripts/mesh_gen.gd")
+	for sp in 5:
+		var tm: ArrayMesh = G.tree(sp, 1)
+		if tm.get_surface_count() != 2:
+			print("FAIL tree species ", sp, " surfaces ", tm.get_surface_count()); fails += 1
+	var rm: ArrayMesh = G.rock(500, 2)
+	if rm.get_surface_count() != 1 or rm.get_faces().size() < 300:
+		print("FAIL rock mesh"); fails += 1
 	print("pieces per board: ", boards.map(func(b): return b.pieces.size()))
 	var gs = load("res://scripts/game_state.gd").new()
 	gs.add("wood", 5)

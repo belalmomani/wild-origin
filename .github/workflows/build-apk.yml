@@ -38,11 +38,11 @@ jobs:
             keytool -keyalg RSA -genkeypair -alias androiddebugkey -keypass android -keystore /root/debug.keystore -storepass android -dname "CN=Android Debug,O=Android,C=US" -validity 9999 -deststoretype pkcs12
           fi
 
+      - name: Import project (textures, shaders)
+        run: godot --headless --import || true
+
       - name: Unit checks
         run: godot --headless --script tests/run_tests.gd
-
-      - name: Import project
-        run: godot --headless --import || true
 
       - name: Smoke test (loads every script, starts a game, places pieces)
         run: |

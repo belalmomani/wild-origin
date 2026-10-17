@@ -2,6 +2,7 @@ extends Node3D
 ## Spawns real 3D stone pieces for puzzle boards; progress is stored in GameState.placed.
 signal message(text: String)
 const D := preload("res://scripts/building_data.gd")
+const M := preload("res://scripts/mats.gd")
 var boards: Array = []
 
 func _ready() -> void:
@@ -43,9 +44,8 @@ func _spawn(p: Dictionary) -> void:
 	var body := StaticBody3D.new()
 	var mi := MeshInstance3D.new()
 	mi.mesh = mesh
-	var m := StandardMaterial3D.new()
-	m.albedo_color = D.piece_color(p)
-	m.roughness = 1.0
+	var tint: Color = D.piece_color(p).lightened(0.45)
+	var m: StandardMaterial3D = M.pbr("rock" if p.cost == "stone" else "bark", tint, 0.6 if p.cost == "stone" else 1.2, 0.95, true).duplicate()
 	m.cull_mode = BaseMaterial3D.CULL_DISABLED
 	mi.material_override = m
 	var cs := CollisionShape3D.new()
