@@ -67,7 +67,7 @@ func info_text() -> String:
 
 func _to_screen(p: Vector2) -> Vector2:
 	var ox := board_rect.position.x + board_rect.size.x * 0.5
-	var oy := board_rect.position.y + board_rect.size.y * 0.5 + board.h * bscale * 0.5
+	var oy: float = board_rect.position.y + board_rect.size.y * 0.5 + board.h * bscale * 0.5
 	return Vector2(ox + p.x * bscale, oy - p.y * bscale)
 
 func _screen_poly(poly: PackedVector2Array, off: Vector2 = Vector2.ZERO) -> PackedVector2Array:
