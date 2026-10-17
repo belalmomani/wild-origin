@@ -28,6 +28,20 @@ func _ready() -> void:
 	ui.set_sound_text(not GameState.muted)
 	ui.show_menu(GameState.has_save())
 	_update_sky()
+	if OS.get_environment("WILD_SMOKE") == "1":
+		_smoke()
+
+func _smoke() -> void:
+	# CI-only: start a new game headless, place a few pieces, then exit. Prints SMOKE OK on success.
+	_start(true)
+	await get_tree().create_timer(1.0).timeout
+	GameState.add("stone", 60)
+	ui.open_puzzle(builder.boards[0])
+	for i in 6:
+		_autoplace()
+	await get_tree().create_timer(1.0).timeout
+	print("SMOKE OK pieces placed: ", GameState.placed.size())
+	get_tree().quit(0)
 
 func _setup_env() -> void:
 	sun = DirectionalLight3D.new()
