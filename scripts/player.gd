@@ -5,6 +5,7 @@ const SPEED := 6.0          # full-stick run speed; walking = partial stick
 const CROUCH_SPEED := 2.0
 const JUMP := 6.0
 const CharacterS := preload("res://scripts/character.gd")
+const HeroRigS := preload("res://scripts/hero_rig.gd")
 const HERO_PATH := "res://assets/hero/hero.glb"
 var cam_yaw := 0.0
 var cam_pitch := -0.3
@@ -31,7 +32,14 @@ func _try_hero() -> bool:
 	var scn = load(HERO_PATH)
 	if not (scn is PackedScene):
 		return false
-	hero = scn.instantiate()
+	var inst: Node3D = scn.instantiate()
+	if inst.find_child("Pelvis", true, false) != null and inst.find_children("*", "Skeleton3D", true, false).is_empty():
+		# segmented, un-skinned model (no skeleton/animations): rig it at runtime
+		inst.free()
+		char_node = HeroRigS.new()
+		body.add_child(char_node)
+		return true
+	hero = inst
 	hero.rotation.y = PI   # most models face +Z, the game moves toward -Z
 	body.add_child(hero)
 	var aps := hero.find_children("*", "AnimationPlayer", true, false)
