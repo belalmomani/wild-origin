@@ -15,6 +15,7 @@ var action := ""
 var action_left := 0.0
 var carry_t := 0.0
 var intro_lock := false
+var aiming := false
 var body: Node3D
 var arm: SpringArm3D
 var cam: Camera3D
@@ -73,6 +74,9 @@ func _hero_anim(spd: float) -> void:
 		hero_anim.get_animation(want).loop_mode = Animation.LOOP_LINEAR
 		hero_anim.play(want, 0.2)
 	hero_anim.speed_scale = 1.0 if (moving or want == a_idle) else 0.0
+
+func set_aim(on: bool) -> void:
+	aiming = on
 
 func play_action(a: String, secs: float) -> void:
 	action = a
@@ -141,7 +145,10 @@ func _physics_process(d: float) -> void:
 		carry_t -= d
 	var locked := intro_lock or action != ""
 	var m := GameState.move if not locked else Vector2.ZERO
-	var top := CROUCH_SPEED if crouch else SPEED
+	var top := (CROUCH_SPEED if crouch else SPEED) * (0.5 if aiming else 1.0)
+	if not intro_lock:
+		arm.spring_length = lerpf(arm.spring_length, 2.3 if aiming else 4.2, clampf(8.0 * d, 0.0, 1.0))
+		cam.fov = lerpf(cam.fov, 46.0 if aiming else 62.0, clampf(8.0 * d, 0.0, 1.0))
 	var dir := Vector3(m.x, 0, m.y).rotated(Vector3.UP, cam_yaw)
 	var speed := m.length() * top
 	if m.length() > 0.01:
@@ -155,16 +162,18 @@ func _physics_process(d: float) -> void:
 	else:
 		velocity.y = -1.0
 	jump_req = false
-	if speed > 0.2:
+	if aiming:
+		body.rotation.y = lerp_angle(body.rotation.y, cam_yaw, 10.0 * d)
+	elif speed > 0.2:
 		body.rotation.y = lerp_angle(body.rotation.y, atan2(-dir.x, -dir.z), 10.0 * d)
 	move_and_slide()
 	var spd := Vector2(velocity.x, velocity.z).length()
 	if hero:
 		_hero_anim(spd)
 	elif char_node:
-		char_node.animate(d, spd, is_on_floor(), velocity.y, crouch, action, carry_t > 0.0)
+		char_node.animate(d, spd, is_on_floor(), velocity.y, crouch, action if action != "" else ("aim" if aiming else ""), carry_t > 0.0)
 		char_node.set_carrying(carry_t > 0.0)
 	position.x = clampf(position.x, -96.0, 96.0)
 	position.z = clampf(position.z, -96.0, 96.0)
 	if position.y < -30.0:
-		position = Vector3(0, 2, 6)
+		position = Vector3(0, 2, 11)

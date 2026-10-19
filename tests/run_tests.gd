@@ -25,14 +25,55 @@ func _init() -> void:
 	if rm.get_surface_count() != 1 or rm.get_faces().size() < 300:
 		print("FAIL rock mesh"); fails += 1
 	print("pieces per board: ", boards.map(func(b): return b.pieces.size()))
+	var F = load("res://scripts/farm_logic.gd")
+	var c = F.new_crop(1, 0.0, 0.0, 0.0)
+	var now := 0.0
+	var fruit_day := -1.0
+	for i in 600:
+		now += 1.0 / 60.0
+		if now - float(c.lw) >= 0.8:
+			F.water(c, now)
+		if F.step(c, now, 1.0 / 60.0, false) == "fruit" and fruit_day < 0.0:
+			fruit_day = now
+	if fruit_day < 6.9 or fruit_day > 7.2 or c.dead:
+		print("FAIL watered tree: fruit at day ", fruit_day, " dead=", c.dead); fails += 1
+	var n = F.new_crop(2, 0.0, 0.0, 0.0)
+	var dry_day := -1.0
+	var dead_day := -1.0
+	now = 0.0
+	for i in 900:
+		now += 1.0 / 60.0
+		var ev: String = F.step(n, now, 1.0 / 60.0, false)
+		if ev == "dry" and dry_day < 0.0:
+			dry_day = now
+		if ev == "dead" and dead_day < 0.0:
+			dead_day = now
+	if dry_day < 1.9 or dry_day > 2.2 or dead_day < 3.5 or dead_day > 8.0:
+		print("FAIL neglected tree: dry ", dry_day, " dead ", dead_day); fails += 1
+	var o = F.new_crop(3, 0.0, 0.0, 0.0)
+	now = 0.0
+	for i in 900:
+		now += 1.0 / 60.0
+		F.step(o, now, 1.0 / 60.0, true)
+	if o.dead or float(o.h) < 0.34:
+		print("FAIL offline tree must not die: ", o.h); fails += 1
+	var H = load("res://scripts/hunt_logic.gd")
+	var r1: Dictionary = H.shot("slingshot", "head", 100.0, 100.0)
+	var r2: Dictionary = H.shot("bow", "head", 100.0, 100.0)
+	var r3: Dictionary = H.shot("slingshot", "legs", 30.0, 30.0)
+	var r4: Dictionary = H.shot("slingshot", "body", 100.0, 100.0)
+	if r1["dead"] or not r1["wound"] or not r2["dead"] or r3["dead"] or not r3["wound"] or r4["dead"] or r4["wound"]:
+		print("FAIL hunt outcomes ", r1, r2, r3, r4); fails += 1
 	var gs = load("res://scripts/game_state.gd").new()
 	gs.add("wood", 5)
 	gs.placed["F0_1"] = true
 	gs.removed[1003] = true
+	gs.crops.append(F.new_crop(9, 1.0, 2.0, 0.5))
+	gs.clock_hours = 100.5
 	var d = JSON.parse_string(JSON.stringify(gs.to_dict()))
 	gs.reset()
 	gs.from_dict(d)
-	if gs.count("wood") != 5 or not gs.placed.has("F0_1") or not gs.removed.has(1003):
+	if gs.count("wood") != 5 or not gs.placed.has("F0_1") or not gs.removed.has(1003) or gs.crops.size() != 1 or absf(gs.clock_hours - 100.5) > 0.01 or int(gs.crops[0].id) != 9:
 		print("FAIL save round-trip"); fails += 1
 	if gs.spend("stone", 1):
 		print("FAIL spend with no stone"); fails += 1

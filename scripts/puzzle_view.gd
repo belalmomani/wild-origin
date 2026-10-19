@@ -21,14 +21,11 @@ var bscale := 1.0
 func _ready() -> void:
 	texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
 
-func _fill(pts: PackedVector2Array, src: PackedVector2Array, col: Color, stone: bool) -> void:
-	if stone:
-		var uvs := PackedVector2Array()
-		for v in src:
-			uvs.append(Vector2(v.x, -v.y) * 0.45)   # same grain whether in tray, in hand or placed
-		draw_colored_polygon(pts, col, uvs, M.tex("rock_a"))
-	else:
-		draw_colored_polygon(pts, col)
+func _fill(pts: PackedVector2Array, src: PackedVector2Array, col: Color, cost: String) -> void:
+	var uvs := PackedVector2Array()
+	for v in src:
+		uvs.append(Vector2(v.x, -v.y) * 0.45)   # same grain whether in tray, in hand or placed
+	draw_colored_polygon(pts, col, uvs, M.tex("rock_a" if cost == "stone" else "planks_a"))
 
 func layout(vp: Vector2) -> void:
 	position = Vector2.ZERO
@@ -151,7 +148,7 @@ func _draw() -> void:
 		var p: Dictionary = board.pieces[i]
 		var pts := _screen_poly(p.poly)
 		if GameState.placed.has(p.id):
-			_fill(pts, p.poly, D.piece_color(p).lightened(0.45), p.cost == "stone")
+			_fill(pts, p.poly, D.piece_color(p).lightened(0.45), p.cost)
 			_outline(pts, Color(0, 0, 0, 0.6), 1.5)
 		elif hint_t > 0.0 and i == hint_idx:
 			draw_colored_polygon(pts, Color(1, 0.9, 0.2, 0.25 + 0.5 * blink))
@@ -192,5 +189,5 @@ func _piece_at(piece: Dictionary, ctr: Vector2, fit: float, alpha: float) -> voi
 	col.a = alpha
 	if GameState.count(piece.cost) == 0:
 		col.a *= 0.45
-	_fill(pts, piece.poly, col, piece.cost == "stone")
+	_fill(pts, piece.poly, col, piece.cost)
 	_outline(pts, Color(0, 0, 0, 0.75), 2.0)

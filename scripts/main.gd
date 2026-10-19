@@ -4,12 +4,15 @@ const WorldS := preload("res://scripts/world.gd")
 const PlayerS := preload("res://scripts/player.gd")
 const UIS := preload("res://scripts/ui.gd")
 const BuildS := preload("res://scripts/building.gd")
-const DAY_SECONDS := 720.0  # one in-game day = 12 real minutes
+const FarmS := preload("res://scripts/farm.gd")
+const HuntS := preload("res://scripts/hunt.gd")
 
 var world
 var player
 var ui
 var builder
+var farm
+var hunt
 var sun: DirectionalLight3D
 var sky: ProceduralSkyMaterial
 var env: Environment
@@ -28,6 +31,8 @@ func _ready() -> void:
 	Ads.reward_granted.connect(func(pl): if pl == "hint": ui.puzzle.show_hint())
 	ui.set_quality_text(GameState.quality)
 	ui.set_sound_text(not GameState.muted)
+	ui.set_day_text(GameState.day_seconds)
+	ui.set_gentle_text(GameState.gentle)
 	ui.show_menu(GameState.has_save())
 	_update_sky()
 	if OS.get_environment("WILD_SMOKE") == "1":
@@ -45,6 +50,37 @@ func _smoke() -> void:
 		player.play_action(a, 0.3)
 		await get_tree().create_timer(0.4).timeout
 	player.crouch = true
+	var cp: Vector3 = player.global_position + Vector3(0, 0, -3)
+	farm.plant(cp)
+	for day in 8:
+		farm.water_near(cp)
+		GameState.clock_hours += 24.0
+		farm.tick(24.0)
+	if GameState.crops.is_empty() or not GameState.crops[0].fruit:
+		print("SMOKE FAIL: apple tree did not bear fruit")
+		get_tree().quit(1)
+		return
+	print("SMOKE farm OK")
+	var deer = hunt.first_of("deer")
+	hunt.apply_hit(deer, "head")
+	hunt.apply_hit(deer, "head")
+	deer.global_position = player.global_position + Vector3(0, 0, -1)
+	var meat0 := GameState.count("meat")
+	if not deer.dead or not hunt.interact_nearby() or GameState.count("meat") != meat0 + 6:
+		print("SMOKE FAIL: deer kill/loot")
+		get_tree().quit(1)
+		return
+	var hen = hunt.first_of("chicken")
+	hunt.apply_hit(hen, "legs")
+	hen.global_position = player.global_position + Vector3(0, 0, -1)
+	if not hen.wounded or not hunt.interact_nearby() or GameState.livestock.size() != 1:
+		print("SMOKE FAIL: wounded chicken capture")
+		get_tree().quit(1)
+		return
+	hunt.toggle_aim()
+	hunt.fire()
+	hunt.toggle_aim()
+	print("SMOKE hunt OK")
 	await get_tree().create_timer(0.3).timeout
 	await get_tree().create_timer(1.0).timeout
 	print("SMOKE OK pieces placed: ", GameState.placed.size())
@@ -104,6 +140,19 @@ func _start(is_new: bool) -> void:
 	builder = BuildS.new()
 	add_child(builder)
 	builder.message.connect(ui.toast)
+	farm = FarmS.new()
+	farm.world = world
+	add_child(farm)
+	farm.message.connect(func(t): ui.toast(t, 4.0))
+	hunt = HuntS.new()
+	hunt.world = world
+	hunt.player = player
+	add_child(hunt)
+	hunt.message.connect(func(t): ui.toast(t, 3.5))
+	hunt.aim_changed.connect(ui.set_aim_mode)
+	if not is_new and GameState.saved_unix > 0.0:
+		var away := maxf(0.0, Time.get_unix_time_from_system() - GameState.saved_unix)
+		farm.advance_offline(away * 24.0 / GameState.day_seconds)
 	_apply_quality()
 	ui.hide_menu()
 	player.play_intro()
@@ -143,6 +192,26 @@ func _on_action(a: String) -> void:
 			ui.set_sound_text(not GameState.muted)
 			GameState.save_settings()
 		"jump": player.jump_req = true
+		"aim": hunt.toggle_aim()
+		"fire": hunt.fire()
+		"weapon": hunt.cycle_weapon()
+		"speed": hunt.speedup()
+		"gentle":
+			GameState.gentle = not GameState.gentle
+			ui.set_gentle_text(GameState.gentle)
+			GameState.save_settings()
+		"plant":
+			var fwd := Vector3(0, 0, -1.4).rotated(Vector3.UP, player.body.rotation.y)
+			if farm.plant(player.global_position + fwd):
+				player.play_action("gather", 1.0)
+		"water":
+			if farm.water_near(player.global_position):
+				player.play_action("gather", 0.8)
+		"day":
+			var cur := GameState.day_seconds
+			GameState.day_seconds = 1440.0 if cur < 1000.0 else (2880.0 if cur < 2000.0 else 720.0)
+			ui.set_day_text(GameState.day_seconds)
+			GameState.save_settings()
 		"crouch":
 			player.crouch = not player.crouch
 			ui.toast("انحناء" if player.crouch else "وقوف", 1.0)
@@ -198,9 +267,12 @@ func _torch() -> void:
 	player.torch.visible = not player.torch.visible
 
 func _interact() -> void:
+	if hunt.interact_nearby():
+		player.play_action("gather", 0.8)
+		return
 	var best = null
 	var bd := 4.0
-	for g in ["tree", "rock"]:
+	for g in ["tree", "rock", "crop"]:
 		for n in get_tree().get_nodes_in_group(g):
 			var d: float = n.global_position.distance_to(player.global_position)
 			if d < bd:
@@ -208,6 +280,10 @@ func _interact() -> void:
 				best = n
 	if best == null:
 		ui.toast("لا يوجد شيء قريب للتفاعل")
+		return
+	if best.is_in_group("crop"):
+		player.play_action("gather", 0.8)
+		farm.interact(int(best.get_meta("cid")))
 		return
 	player.play_action("chop" if best.is_in_group("tree") else "gather", 0.9)
 	var hp: int = int(best.get_meta("hp")) - 1
@@ -217,8 +293,8 @@ func _interact() -> void:
 		return
 	GameState.removed[int(best.get_meta("id"))] = true
 	if best.is_in_group("tree"):
-		GameState.add("wood", 3)
-		ui.toast("+3 خشب")
+		GameState.add("wood", 5)
+		ui.toast("+5 خشب")
 	else:
 		GameState.add("stone", 6)
 		player.carry_t = 6.0
@@ -229,7 +305,10 @@ func _interact() -> void:
 func _process(d: float) -> void:
 	if not playing:
 		return
-	GameState.time_of_day = fposmod(GameState.time_of_day + d * 24.0 / DAY_SECONDS, 24.0)
+	var dh := d * 24.0 / GameState.day_seconds
+	GameState.clock_hours += dh
+	GameState.time_of_day = fposmod(GameState.clock_hours, 24.0)
+	farm.tick(dh)
 	_update_sky()
 	hud_t += d
 	if hud_t > 0.25:
@@ -251,7 +330,11 @@ func _hud() -> void:
 		var cost: String = b.pieces[0].cost
 		q = "%s — متبقي %d قطعة — لديك %d %s. اجمع ثم اضغط «بناء»" % [b.name, builder.remaining(bi), g.count(cost), "حجارة" if cost == "stone" else "خشب"]
 	var hr := int(g.time_of_day)
-	var res := "خشب %d | حجر %d | مستوى %d | الوقت %02d:%02d | الصحة 100" % [g.count("wood"), g.count("stone"), g.level(), hr, int((g.time_of_day - hr) * 60.0)]
+	var res := "خشب %d | حجر %d | بذور %d | تفاح %d | مستوى %d | الوقت %02d:%02d" % [g.count("wood"), g.count("stone"), g.count("seeds"), g.count("apples"), g.level(), hr, int((g.time_of_day - hr) * 60.0)]
+	ui.set_crop(farm.info_text(player.global_position))
+	var tt: String = hunt.transit_text()
+	ui.set_hunt(hunt.weapon_text() + ("\n" + tt if tt != "" else ""))
+	ui.set_speed_visible(tt != "")
 	ui.set_hud(res, q)
 
 func _save() -> void:

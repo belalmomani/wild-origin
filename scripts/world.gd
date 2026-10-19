@@ -34,15 +34,15 @@ func build(removed: Dictionary) -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 42
 	for i in 170:
-		var p := Vector2(rng.randf_range(-80, 80), rng.randf_range(-80, 80))
+		var p := Vector2(rng.randf_range(-40, 40), rng.randf_range(-40, 40))   # 50% closer than before (was +-80)
 		var s := rng.randf_range(0.85, 1.35)
-		if p.length() < 24.0 or removed.has(i):
+		if p.length() < 14.0 or removed.has(i):
 			continue
 		_tree(Vector3(p.x, height_at(p.x, p.y), p.y), i, s, rng.randf() * TAU)
 	for i in 60:
-		var p := Vector2(rng.randf_range(-80, 80), rng.randf_range(-80, 80))
+		var p := Vector2(rng.randf_range(-40, 40), rng.randf_range(-40, 40))
 		var sc := rng.randf_range(0.9, 1.8)
-		if p.length() < 24.0 or removed.has(1000 + i):
+		if p.length() < 14.0 or removed.has(1000 + i):
 			continue
 		_rock(Vector3(p.x, height_at(p.x, p.y), p.y), 1000 + i, sc, rng.randf() * TAU)
 	_grass(rng)
@@ -55,7 +55,7 @@ func _weights(x: float, z: float, h: float) -> Color:
 	var n2 := patch.get_noise_2d(x + 300.0, z - 200.0) * 0.5 + 0.5
 	var rock := clampf(smoothstep(0.55, 1.1, slope) + smoothstep(9.0, 14.0, h), 0.0, 1.0)
 	var dirt := smoothstep(0.62, 0.78, n1) * 0.9
-	var site := 1.0 - smoothstep(5.0, 10.0, Vector2(x, z + 12.0).length())   # packed earth around the build site
+	var site := 1.0 - smoothstep(7.0, 12.0, Vector2(x, z).length())   # packed earth around the build site
 	dirt = maxf(dirt, site)
 	var gravel := smoothstep(0.66, 0.8, n2) * 0.8
 	var grass := maxf(0.05, 1.0 - maxf(dirt, gravel) - rock)

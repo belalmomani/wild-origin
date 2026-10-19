@@ -45,7 +45,7 @@ func _spawn(p: Dictionary) -> void:
 	var mi := MeshInstance3D.new()
 	mi.mesh = mesh
 	var tint: Color = D.piece_color(p).lightened(0.45)
-	var m: StandardMaterial3D = M.pbr("rock" if p.cost == "stone" else "bark", tint, 0.6 if p.cost == "stone" else 1.2, 0.95, true).duplicate()
+	var m: StandardMaterial3D = M.pbr("rock" if p.cost == "stone" else "planks", tint, 0.6 if p.cost == "stone" else 0.8, 0.9, true).duplicate()
 	m.cull_mode = BaseMaterial3D.CULL_DISABLED
 	mi.material_override = m
 	var cs := CollisionShape3D.new()

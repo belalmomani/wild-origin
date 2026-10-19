@@ -1,6 +1,6 @@
 extends RefCounted
 ## Pure data: puzzle boards (4 facades, roof, 4 fence sides). Each board = irregular stone pieces.
-const ORIGIN := Vector3(0, 0, -12)
+const ORIGIN := Vector3(0, 0, 0)   # house stands in the middle of the clearing
 
 static func piece_color(p: Dictionary) -> Color:
 	var h := absi(hash(p.id))
@@ -109,7 +109,7 @@ static func make_boards() -> Array:
 			op = [Rect2(-0.4, 0.0, 0.8, 1.92)]
 		elif k == 1 or k == 3:
 			op = [Rect2(-0.4, 0.96, 0.8, 0.96)]
-		out.append(wall_board("F%d" % k, names[k], 4.0, 2.4, 10, 5, 0.3, "stone", b, o + b * Vector3(0, 0, 2), op, 100 + k))
+		out.append(wall_board("F%d" % k, names[k], 4.0, 2.4, 10, 5, 0.3, "wood", b, o + b * Vector3(0, 0, 2), op, 100 + k))
 	out.append(roof_board(o))
 	for s in 4:
 		var b2 := Basis(Vector3.UP, deg_to_rad(s * 90.0))

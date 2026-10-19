@@ -91,6 +91,24 @@ def bark():
     col = lerp((34, 25, 18), (118, 92, 66), np.clip(ridge * 0.8 + m * 0.3, 0, 1))
     save_rgb("bark", col); save_normal("bark", ridge * 0.8 + m * 0.2, 2.2)
 
+def planks():
+    """Horizontal wooden boards: per-board tone, grain streaks, dark seams (tileable)."""
+    r = np.random.default_rng(51)
+    bh = N // 8
+    grain = fbm(beta=1.6, seed=52, stretch=(1, 6)); fine = fbm(beta=0.9, seed=53, stretch=(1, 10))
+    col = np.zeros((N, N, 3)); hgt = np.zeros((N, N))
+    for b in range(8):
+        tone = r.uniform(0.0, 1.0); off = int(r.integers(0, N))
+        g = np.roll(grain, off, 1)[b * bh:(b + 1) * bh]; f = np.roll(fine, off * 2, 1)[b * bh:(b + 1) * bh]
+        c = lerp((96, 62, 34), (170, 118, 70), np.clip(0.25 + tone * 0.5 + (g - 0.5) * 0.9, 0, 1))
+        c = c * (0.85 + 0.3 * f[..., None])
+        col[b * bh:(b + 1) * bh] = c
+        h = 0.5 + (g - 0.5) * 0.4 + (f - 0.5) * 0.2
+        h[:3] = 0.0; h[-2:] = 0.0                       # seams between boards
+        hgt[b * bh:(b + 1) * bh] = h
+        col[b * bh:b * bh + 3] *= 0.45
+    save_rgb("planks", col); save_normal("planks", hgt, 2.5)
+
 def fabric():
     y, x = np.mgrid[0:N, 0:N]
     twill = 0.5 + 0.5 * np.sin(2 * math.pi * (x + y) / 8.0)
@@ -191,7 +209,7 @@ def tuft():
     finish(img, "grass_tuft")
 
 if __name__ == "__main__":
-    grass(); dirt(); gravel(); rock(); bark(); fabric(); leather()
+    grass(); dirt(); gravel(); rock(); bark(); planks(); fabric(); leather()
     foliage("leaf_oak", 150, 30, 11, (58, 112, 36), 26, 41)
     foliage("leaf_apple", 140, 26, 10, (74, 126, 44), 22, 42, apples=14)
     foliage("leaf_olive", 190, 34, 5, (112, 132, 92), 24, 43, silver=True)

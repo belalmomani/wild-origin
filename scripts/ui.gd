@@ -15,6 +15,11 @@ var res_label: Label
 var quest_label: Label
 var toast_label: Label
 var puzzle_info: Label
+var crop_label: Label
+var hunt_label: Label
+var crosshair: Label
+var aim_on := false
+var speed_on := false
 var stick_base: Panel
 var stick_knob: Panel
 var stick_id := -1
@@ -44,6 +49,10 @@ func _ready() -> void:
 	quest_label = _label(26)
 	toast_label = _label(30)
 	puzzle_info = _label(28)
+	crop_label = _label(24)
+	hunt_label = _label(22)
+	crosshair = _label(54)
+	crosshair.text = "+"
 	bar_top = ColorRect.new()
 	bar_bot = ColorRect.new()
 	for bar in [bar_top, bar_bot]:
@@ -53,8 +62,8 @@ func _ready() -> void:
 		add_child(bar)
 	stick_base = _circle(180, Color(1, 1, 1, 0.18))
 	stick_knob = _circle(80, Color(1, 1, 1, 0.45))
-	for n in [["new", "لعبة جديدة", "menu"], ["continue", "متابعة اللعبة", "menu"], ["quality", "الجودة", "menu"], ["sound", "الصوت", "menu"],
-			["jump", "قفز", "hud"], ["interact", "تفاعل", "hud"], ["build", "بناء", "hud"], ["torch", "مشعل", "hud"], ["crouch", "انحناء", "hud"], ["save", "حفظ", "hud"],
+	for n in [["new", "لعبة جديدة", "menu"], ["continue", "متابعة اللعبة", "menu"], ["quality", "الجودة", "menu"], ["sound", "الصوت", "menu"], ["day", "مدة اليوم", "menu"], ["gentle", "تخفيف المشاهد", "menu"],
+			["jump", "قفز", "hud"], ["interact", "تفاعل", "hud"], ["build", "بناء", "hud"], ["torch", "مشعل", "hud"], ["crouch", "انحناء", "hud"], ["plant", "زرع", "hud"], ["water", "سقي", "hud"], ["aim", "تصويب", "hud"], ["weapon", "سلاح", "hud"], ["speed", "تسريع", "special"], ["fire", "إطلاق", "special"], ["save", "حفظ", "hud"],
 			["hint", "تلميح", "puzzle"], ["pclose", "إغلاق", "puzzle"], ["pleft", "◀", "puzzle"], ["pright", "▶", "puzzle"]]:
 		_btn(n[0], n[1], n[2])
 	get_viewport().size_changed.connect(_layout)
@@ -96,6 +105,7 @@ func _btn(n: String, text: String, group: String) -> void:
 	match group:
 		"menu": menu_btns.append(b)
 		"hud": hud_btns.append(b)
+		"special": pass
 		_: puzzle_btns.append(b)
 
 func _put(n: String, pos: Vector2, sz: Vector2) -> void:
@@ -116,9 +126,21 @@ func _layout() -> void:
 	toast_label.position = Vector2(0, vp.y * 0.55)
 	toast_label.size = Vector2(vp.x, 60)
 	var cx := vp.x / 2.0 - 190.0
-	for i in 4:
-		var nm: String = ["new", "continue", "quality", "sound"][i]
-		_put(nm, Vector2(cx, vp.y * 0.36 + i * 95.0), Vector2(380, 80))
+	for i in 6:
+		var nm: String = ["new", "continue", "quality", "sound", "day", "gentle"][i]
+		_put(nm, Vector2(cx, vp.y * 0.26 + i * 74.0), Vector2(380, 64))
+	hunt_label.position = Vector2(0, 166)
+	hunt_label.size = Vector2(vp.x, 30)
+	crosshair.position = Vector2(vp.x * 0.5 - 30.0, vp.y * 0.5 - 38.0)
+	crosshair.size = Vector2(60, 60)
+	_put("aim", Vector2(vp.x - 320, vp.y - 340), Vector2(130, 100))
+	_put("weapon", Vector2(vp.x - 600, vp.y - 110), Vector2(130, 100))
+	_put("speed", Vector2(20, 84), Vector2(170, 64))
+	_put("fire", Vector2(vp.x - 170, vp.y - 410), Vector2(140, 120))
+	crop_label.position = Vector2(0, 96)
+	crop_label.size = Vector2(vp.x, 70)
+	_put("plant", Vector2(vp.x - 460, vp.y - 220), Vector2(130, 100))
+	_put("water", Vector2(vp.x - 460, vp.y - 330), Vector2(130, 100))
 	_put("jump", Vector2(vp.x - 160, vp.y - 160), Vector2(130, 130))
 	_put("interact", Vector2(vp.x - 300, vp.y - 110), Vector2(130, 100))
 	_put("build", Vector2(vp.x - 170, vp.y - 280), Vector2(140, 100))
@@ -165,14 +187,41 @@ func _set_mode() -> void:
 	for b in puzzle_btns:
 		b.visible = in_puzzle
 	puzzle_info.visible = in_puzzle
-	for l in [res_label, quest_label]:
+	for l in [res_label, quest_label, crop_label, hunt_label]:
 		l.visible = not in_menu and not in_puzzle
+	_special()
 
 func set_quality_text(q: int) -> void:
 	buttons["quality"].text = "الجودة: " + ["منخفضة", "متوسطة", "عالية"][q]
 
 func set_sound_text(on: bool) -> void:
 	buttons["sound"].text = "الصوت: " + ("مفعّل" if on else "مكتوم")
+
+func set_gentle_text(on: bool) -> void:
+	buttons["gentle"].text = "تخفيف المشاهد: " + ("مفعّل" if on else "معطّل")
+
+func set_aim_mode(on: bool) -> void:
+	aim_on = on
+	_special()
+
+func set_speed_visible(on: bool) -> void:
+	speed_on = on
+	_special()
+
+func set_hunt(text: String) -> void:
+	hunt_label.text = text
+
+func _special() -> void:
+	var show_hud := not in_menu and not in_puzzle
+	buttons["fire"].visible = show_hud and aim_on
+	buttons["speed"].visible = show_hud and speed_on
+	crosshair.visible = show_hud and aim_on
+
+func set_day_text(secs: float) -> void:
+	buttons["day"].text = "مدة اليوم: %d دقيقة" % int(round(secs / 60.0))
+
+func set_crop(text: String) -> void:
+	crop_label.text = text
 
 func set_hud(res: String, quest: String) -> void:
 	res_label.text = res
