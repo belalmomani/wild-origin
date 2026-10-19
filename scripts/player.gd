@@ -6,6 +6,7 @@ const CROUCH_SPEED := 2.0
 const JUMP := 6.0
 const CharacterS := preload("res://scripts/character.gd")
 const HeroRigS := preload("res://scripts/hero_rig.gd")
+const HeroSkinnedS := preload("res://scripts/hero_skinned.gd")
 const HERO_PATH := "res://assets/hero/hero.glb"
 var cam_yaw := 0.0
 var cam_pitch := -0.3
@@ -34,6 +35,13 @@ func _try_hero() -> bool:
 	if not (scn is PackedScene):
 		return false
 	var inst: Node3D = scn.instantiate()
+	var sks := inst.find_children("*", "Skeleton3D", true, false)
+	if not sks.is_empty() and (sks[0] as Skeleton3D).find_bone("chest") >= 0 and (sks[0] as Skeleton3D).find_bone("shL") >= 0:
+		# our skinned explorer: bones named like character.gd joints -> procedural pose driver
+		inst.free()
+		char_node = HeroSkinnedS.new()
+		body.add_child(char_node)
+		return true
 	if inst.find_child("Pelvis", true, false) != null and inst.find_children("*", "Skeleton3D", true, false).is_empty():
 		# segmented, un-skinned model (no skeleton/animations): rig it at runtime
 		inst.free()

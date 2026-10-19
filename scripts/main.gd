@@ -6,6 +6,7 @@ const UIS := preload("res://scripts/ui.gd")
 const BuildS := preload("res://scripts/building.gd")
 const FarmS := preload("res://scripts/farm.gd")
 const HuntS := preload("res://scripts/hunt.gd")
+const BarnS := preload("res://scripts/barn.gd")
 
 var world
 var player
@@ -13,6 +14,7 @@ var ui
 var builder
 var farm
 var hunt
+var barn
 var sun: DirectionalLight3D
 var sky: ProceduralSkyMaterial
 var env: Environment
@@ -81,6 +83,31 @@ func _smoke() -> void:
 	hunt.fire()
 	hunt.toggle_aim()
 	print("SMOKE hunt OK")
+	var cn = player.char_node
+	if cn == null or not cn.has_method("is_skinned_ok") or not cn.is_skinned_ok():
+		print("SMOKE FAIL: skinned hero not loaded (hero.glb)")
+		get_tree().quit(1)
+		return
+	print("SMOKE hero OK")
+	GameState.barn_unlocked = true
+	GameState.add("wood", 600)
+	for bi in builder.boards.size():
+		if str(builder.boards[bi].id).begins_with("B"):
+			for pi in builder.boards[bi].pieces.size():
+				builder.place(bi, pi)
+	GameState.barn_built = builder.barn_done()
+	GameState.pen.append(load("res://scripts/barn_logic.gd").new_animal(GameState.next_pen_id, "deer", GameState.clock_hours / 24.0))
+	GameState.next_pen_id += 1
+	barn.tick(0.1)
+	GameState.clock_hours += 30.0
+	barn.tick(0.1)
+	GameState.add("apples", 3)
+	var pen_a = GameState.pen[0]
+	if not GameState.barn_built or not barn.interact(barn.center) or float(pen_a.fed) < GameState.clock_hours / 24.0 - 0.01:
+		print("SMOKE FAIL: barn feeding")
+		get_tree().quit(1)
+		return
+	print("SMOKE barn OK")
 	await get_tree().create_timer(0.3).timeout
 	await get_tree().create_timer(1.0).timeout
 	print("SMOKE OK pieces placed: ", GameState.placed.size())
@@ -150,9 +177,13 @@ func _start(is_new: bool) -> void:
 	add_child(hunt)
 	hunt.message.connect(func(t): ui.toast(t, 3.5))
 	hunt.aim_changed.connect(ui.set_aim_mode)
+	barn = BarnS.new()
+	barn.world = world
+	add_child(barn)
+	barn.message.connect(func(t): ui.toast(t, 4.0))
 	if not is_new and GameState.saved_unix > 0.0:
 		var away := maxf(0.0, Time.get_unix_time_from_system() - GameState.saved_unix)
-		farm.advance_offline(away * 24.0 / GameState.day_seconds)
+		_offline(away * 24.0 / GameState.day_seconds)
 	_apply_quality()
 	ui.hide_menu()
 	player.play_intro()
@@ -160,6 +191,19 @@ func _start(is_new: bool) -> void:
 	playing = true
 	if not GameState.tutorial_done:
 		_tutorial()
+
+## Time spent away: crops grow, animals may weaken but nothing dies (cap: 2 game days).
+func _offline(hours: float) -> void:
+	var left := minf(hours, 48.0)
+	while left > 0.0:
+		var st := minf(1.0, left)
+		GameState.clock_hours += st
+		farm.tick(st, true)
+		barn.tick(st, true)
+		left -= st
+	farm.refresh_all()
+	farm.notify_after_offline()
+	barn.notify_after_offline()
 
 func _tutorial() -> void:
 	GameState.tutorial_done = true
@@ -267,6 +311,9 @@ func _torch() -> void:
 	player.torch.visible = not player.torch.visible
 
 func _interact() -> void:
+	if barn.interact(player.global_position):
+		player.play_action("gather", 0.8)
+		return
 	if hunt.interact_nearby():
 		player.play_action("gather", 0.8)
 		return
@@ -309,6 +356,7 @@ func _process(d: float) -> void:
 	GameState.clock_hours += dh
 	GameState.time_of_day = fposmod(GameState.clock_hours, 24.0)
 	farm.tick(dh)
+	barn.tick(dh)
 	_update_sky()
 	hud_t += d
 	if hud_t > 0.25:
@@ -324,14 +372,18 @@ func _hud() -> void:
 	var q := ""
 	var bi: int = builder.current_index()
 	if bi < 0:
-		q = "اكتمل المنزل والسور! (الصيد والمزرعة قيد التطوير)"
+		q = "اصطد واحصل على حيوان حي لفتح الحظيرة (أصِب الساق ثم تفاعل)" if not GameState.barn_unlocked else "الحظيرة جاهزة: أطعم الحيوانات كل يوم (اقترب واضغط «تفاعل»)"
 	else:
 		var b: Dictionary = builder.boards[bi]
 		var cost: String = b.pieces[0].cost
 		q = "%s — متبقي %d قطعة — لديك %d %s. اجمع ثم اضغط «بناء»" % [b.name, builder.remaining(bi), g.count(cost), "حجارة" if cost == "stone" else "خشب"]
 	var hr := int(g.time_of_day)
 	var res := "خشب %d | حجر %d | بذور %d | تفاح %d | مستوى %d | الوقت %02d:%02d" % [g.count("wood"), g.count("stone"), g.count("seeds"), g.count("apples"), g.level(), hr, int((g.time_of_day - hr) * 60.0)]
-	ui.set_crop(farm.info_text(player.global_position))
+	GameState.barn_built = GameState.barn_unlocked and builder.barn_done()
+	var ct: String = farm.info_text(player.global_position)
+	if ct == "":
+		ct = barn.info_text(player.global_position)
+	ui.set_crop(ct)
 	var tt: String = hunt.transit_text()
 	ui.set_hunt(hunt.weapon_text() + ("\n" + tt if tt != "" else ""))
 	ui.set_speed_visible(tt != "")

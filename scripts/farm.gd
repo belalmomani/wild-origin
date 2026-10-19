@@ -116,6 +116,12 @@ func advance_offline(hours: float) -> void:
 			message.emit("مرّ وقت أثناء غيابك: تحقّق من أشجار التفاح واسقِها.")
 			break
 
+func notify_after_offline() -> void:
+	for c in GameState.crops:
+		if not c.dead and (float(c.h) < 1.0 or _now() - float(c.lw) >= L.WARN_DAYS):
+			message.emit("مرّ وقت أثناء غيابك: تحقّق من أشجار التفاح واسقِها.")
+			return
+
 func _nearest(pos: Vector3, maxd: float) -> Dictionary:
 	var best := {}
 	var bd := maxd

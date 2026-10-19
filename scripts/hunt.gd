@@ -6,6 +6,7 @@ signal message(text: String)
 signal aim_changed(on: bool)
 const L := preload("res://scripts/hunt_logic.gd")
 const AnimalS := preload("res://scripts/animal.gd")
+const BL := preload("res://scripts/barn_logic.gd")
 var world
 var player
 var animals: Array = []
@@ -68,8 +69,9 @@ func _transit() -> void:
 		if now >= float(e.eta):
 			GameState.livestock.erase(e)
 			var k: String = str(e.kind)
-			GameState.animals[k] = int(GameState.animals.get(k, 0)) + 1
-			message.emit("وصل %s إلى المزرعة ✓" % L.ANIMALS[k]["name"])
+			GameState.pen.append(BL.new_animal(GameState.next_pen_id, k, GameState.clock_hours / 24.0))
+			GameState.next_pen_id += 1
+			message.emit("وصل %s إلى الحظيرة ✓" % L.ANIMALS[k]["name"])
 
 func transit_text() -> String:
 	if GameState.livestock.is_empty():
@@ -211,6 +213,9 @@ func interact_nearby() -> bool:
 	else:
 		GameState.livestock.append({"kind": best.kind, "eta": Time.get_unix_time_from_system() + L.TRANSIT_SECONDS})
 		message.emit("التقطتَ %s. رحلة النقل إلى المزرعة 3 دقائق." % L.ANIMALS[best.kind]["name"])
+		if not GameState.barn_unlocked:
+			GameState.barn_unlocked = true
+			message.emit("فُتحت مهمة بناء الحظيرة! اضغط «بناء».")
 		animals.erase(best)
 		best.queue_free()
 		GameState.xp += 2

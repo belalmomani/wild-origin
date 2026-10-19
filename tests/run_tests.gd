@@ -4,7 +4,7 @@ func _init() -> void:
 	var fails := 0
 	var D = load("res://scripts/building_data.gd")
 	var boards: Array = D.make_boards()
-	if boards.size() != 9:
+	if boards.size() != 14:
 		print("FAIL boards: ", boards.size()); fails += 1
 	if boards[2].pieces.size() != 50:
 		print("FAIL back facade should have 50 pieces: ", boards[2].pieces.size()); fails += 1
@@ -64,6 +64,39 @@ func _init() -> void:
 	var r4: Dictionary = H.shot("slingshot", "body", 100.0, 100.0)
 	if r1["dead"] or not r1["wound"] or not r2["dead"] or r3["dead"] or not r3["wound"] or r4["dead"] or r4["wound"]:
 		print("FAIL hunt outcomes ", r1, r2, r3, r4); fails += 1
+	var B = load("res://scripts/barn_logic.gd")
+	var an = B.new_animal(1, "deer", 0.0)
+	var warn_day := -1.0
+	var starve_day := -1.0
+	var dead_day := -1.0
+	now = 0.0
+	for i in 600:
+		now += 1.0 / 60.0
+		var ev: String = B.step(an, now, 1.0 / 60.0, false)
+		if ev == "hungry" and warn_day < 0.0:
+			warn_day = now
+		if ev == "starving" and starve_day < 0.0:
+			starve_day = now
+		if ev == "dead" and dead_day < 0.0:
+			dead_day = now
+	if warn_day < 0.7 or warn_day > 0.85 or starve_day < 0.95 or starve_day > 1.1 or dead_day < 4.0 or dead_day > 6.5:
+		print("FAIL barn neglect: ", warn_day, " ", starve_day, " ", dead_day); fails += 1
+	var fed = B.new_animal(2, "chicken", 0.0)
+	now = 0.0
+	for i in 600:
+		now += 1.0 / 60.0
+		if B.hunger(fed, now) >= 0.8:
+			B.feed(fed, now)
+		B.step(fed, now, 1.0 / 60.0, false)
+	if fed.dead or float(fed.h) < 0.99:
+		print("FAIL fed animal degraded"); fails += 1
+	var off = B.new_animal(3, "deer", 0.0)
+	now = 0.0
+	for i in 900:
+		now += 1.0 / 60.0
+		B.step(off, now, 1.0 / 60.0, true)
+	if off.dead or float(off.h) < 0.34:
+		print("FAIL offline animal must not die"); fails += 1
 	var gs = load("res://scripts/game_state.gd").new()
 	gs.add("wood", 5)
 	gs.placed["F0_1"] = true

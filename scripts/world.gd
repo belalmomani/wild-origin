@@ -33,16 +33,16 @@ func build(removed: Dictionary) -> void:
 		_rock_variants.append(G.rock(500 + i, 2))
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 42
-	for i in 170:
+	for i in 200:
 		var p := Vector2(rng.randf_range(-40, 40), rng.randf_range(-40, 40))   # 50% closer than before (was +-80)
 		var s := rng.randf_range(0.85, 1.35)
-		if p.length() < 14.0 or removed.has(i):
+		if p.length() < 20.0 or removed.has(i):
 			continue
 		_tree(Vector3(p.x, height_at(p.x, p.y), p.y), i, s, rng.randf() * TAU)
-	for i in 60:
+	for i in 70:
 		var p := Vector2(rng.randf_range(-40, 40), rng.randf_range(-40, 40))
 		var sc := rng.randf_range(0.9, 1.8)
-		if p.length() < 14.0 or removed.has(1000 + i):
+		if p.length() < 20.0 or removed.has(1000 + i):
 			continue
 		_rock(Vector3(p.x, height_at(p.x, p.y), p.y), 1000 + i, sc, rng.randf() * TAU)
 	_grass(rng)

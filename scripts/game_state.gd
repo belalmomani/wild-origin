@@ -3,7 +3,7 @@ extends Node
 const SAVE_PATH := "user://save.json"
 const SETTINGS_PATH := "user://settings.json"
 
-var inv := {"wood": 0, "stone": 0, "seeds": 2, "apples": 0, "arrows": 15, "meat": 0}
+var inv := {"wood": 0, "stone": 0, "seeds": 2, "apples": 0, "arrows": 15, "meat": 0, "hay": 0}
 var clock_hours := 8.0        # total game hours (time_of_day = clock_hours mod 24)
 var crops: Array = []
 var next_crop_id := 1
@@ -21,6 +21,10 @@ var weapons: Array = ["slingshot"]
 var weapon_idx := 0
 var livestock: Array = []      # animals being carried to the farm: {kind, eta(unix)}
 var animals := {"deer": 0, "chicken": 0}   # arrived at the farm
+var barn_unlocked := false     # first live animal caught -> barn quest opens
+var barn_built := false
+var pen: Array = []             # animals housed at the barn (see barn_logic.gd)
+var next_pen_id := 1
 var gentle := false             # softened hunting visuals
 var quality := 1
 var muted := false
@@ -29,7 +33,11 @@ var move := Vector2.ZERO
 var cam_delta := Vector2.ZERO
 
 func reset() -> void:
-	inv = {"wood": 0, "stone": 0, "seeds": 2, "apples": 0, "arrows": 15, "meat": 0}
+	inv = {"wood": 0, "stone": 0, "seeds": 2, "apples": 0, "arrows": 15, "meat": 0, "hay": 0}
+	barn_unlocked = false
+	barn_built = false
+	pen = []
+	next_pen_id = 1
 	weapons = ["slingshot"]
 	weapon_idx = 0
 	livestock = []
@@ -65,7 +73,7 @@ func to_dict() -> Dictionary:
 	return {"v": 1, "inv": inv, "placed": placed.keys(), "removed": removed.keys(),
 		"pos": [player_pos.x, player_pos.y, player_pos.z], "t": time_of_day,
 		"hints": hints_left, "phase": phase, "xp": xp, "torch": torch_owned,
-		"clock": clock_hours, "weapons": weapons, "widx": weapon_idx, "livestock": livestock, "animals": animals, "crops": crops, "ncid": next_crop_id, "saved": Time.get_unix_time_from_system()}
+		"clock": clock_hours, "weapons": weapons, "widx": weapon_idx, "livestock": livestock, "animals": animals, "pen": pen, "npid": next_pen_id, "barn_u": barn_unlocked, "crops": crops, "ncid": next_crop_id, "saved": Time.get_unix_time_from_system()}
 
 func from_dict(d: Dictionary) -> void:
 	reset()
@@ -88,6 +96,12 @@ func from_dict(d: Dictionary) -> void:
 			livestock.append(e)
 	var an: Dictionary = d.get("animals", {})
 	animals = {"deer": int(an.get("deer", 0)), "chicken": int(an.get("chicken", 0))}
+	pen = []
+	for e in d.get("pen", []):
+		if typeof(e) == TYPE_DICTIONARY:
+			pen.append(e)
+	next_pen_id = int(d.get("npid", 1))
+	barn_unlocked = bool(d.get("barn_u", false))
 	next_crop_id = int(d.get("ncid", 1))
 	clock_hours = float(d.get("clock", 8.0))
 	time_of_day = fposmod(clock_hours, 24.0)

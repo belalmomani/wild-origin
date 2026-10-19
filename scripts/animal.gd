@@ -15,6 +15,9 @@ var phase := 0.0
 var legs: Array = []
 var rng := RandomNumberGenerator.new()
 var corpse_t := 0.0
+var tame := false
+var home := Vector3.ZERO
+var home_r := 0.0
 
 func _m(parent: Node3D, mesh: Mesh, mat: Material, pos: Vector3, rot: Vector3 = Vector3.ZERO, scl: Vector3 = Vector3.ONE) -> MeshInstance3D:
 	var mi := MeshInstance3D.new()
@@ -67,6 +70,15 @@ func _zone(zn: String, size: Vector3, pos: Vector3) -> void:
 	a.position = pos
 	a.add_child(cs)
 	add_child(a)
+
+## Domestic animal living in the barn pen: never flees, stays near home, cannot be shot.
+func make_tame(h: Vector3, r: float) -> void:
+	tame = true
+	home = h
+	home_r = r
+	for c in get_children():
+		if c is Area3D:
+			(c as Area3D).collision_layer = 0
 
 func setup(k: String, seed_v: int) -> void:
 	kind = k
@@ -147,7 +159,7 @@ func tick(d: float, ppos: Vector3, crouch: bool, world) -> void:
 		wound_t += d
 		if wound_t > 25.0:
 			state = "tired"
-	if state != "tired" and state != "flee" and dist < alert:
+	if not tame and state != "tired" and state != "flee" and dist < alert:
 		state = "flee"
 		state_t = 3.5
 		dir = (away.normalized() + Vector3(rng.randf_range(-0.4, 0.4), 0, rng.randf_range(-0.4, 0.4))).normalized()
@@ -161,7 +173,11 @@ func tick(d: float, ppos: Vector3, crouch: bool, world) -> void:
 		"wander":
 			if state_t <= 0.0:
 				state_t = rng.randf_range(2.5, 6.0)
-				if rng.randf() < 0.45:
+				var to_home := home - global_position
+				to_home.y = 0.0
+				if tame and to_home.length() > home_r:
+					dir = to_home.normalized()
+				elif rng.randf() < 0.45:
 					dir = Vector3.ZERO
 				else:
 					var a := rng.randf() * TAU

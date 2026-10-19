@@ -1,6 +1,7 @@
 extends RefCounted
 ## Pure data: puzzle boards (4 facades, roof, 4 fence sides). Each board = irregular stone pieces.
 const ORIGIN := Vector3(0, 0, 0)   # house stands in the middle of the clearing
+const BARN := Vector3(13, 0, 0)    # barn east of the house (door faces +Z, the pen is in front of it)
 
 static func piece_color(p: Dictionary) -> Color:
 	var h := absi(hash(p.id))
@@ -78,7 +79,7 @@ static func wall_board(id: String, title: String, w: float, h: float, nx: int, n
 			n += 1
 	return {"id": id, "name": title, "w": w, "h": h, "pieces": pieces, "openings": openings}
 
-static func roof_board(o: Vector3) -> Dictionary:
+static func roof_board(o: Vector3, rid: String = "ROOF", title: String = "السقف") -> Dictionary:
 	var s := sin(deg_to_rad(31.0))
 	var c := cos(deg_to_rad(31.0))
 	var xs := Vector3(1, 0, 0)
@@ -87,16 +88,16 @@ static func roof_board(o: Vector3) -> Dictionary:
 	var ya := Vector3(0, s, -c)
 	var yb := Vector3(0, s, c)
 	var pieces: Array = []
-	pieces.append({"id": "ROOF_0", "poly": PackedVector2Array([Vector2(-4.8, 1.6), Vector2(-0.2, 1.6), Vector2(-0.2, 4.1), Vector2(-4.8, 4.1)]),
+	pieces.append({"id": rid + "_0", "poly": PackedVector2Array([Vector2(-4.8, 1.6), Vector2(-0.2, 1.6), Vector2(-0.2, 4.1), Vector2(-4.8, 4.1)]),
 		"mesh_poly": slab, "xf": Transform3D(Basis(xs, ya, xs.cross(ya)), o + Vector3(0, 3.0, 1.0)), "thick": 0.15, "cost": "wood"})
-	pieces.append({"id": "ROOF_1", "poly": PackedVector2Array([Vector2(0.2, 1.6), Vector2(4.8, 1.6), Vector2(4.8, 4.1), Vector2(0.2, 4.1)]),
+	pieces.append({"id": rid + "_1", "poly": PackedVector2Array([Vector2(0.2, 1.6), Vector2(4.8, 1.6), Vector2(4.8, 4.1), Vector2(0.2, 4.1)]),
 		"mesh_poly": slab, "xf": Transform3D(Basis(xs, yb, xs.cross(yb)), o + Vector3(0, 3.0, -1.0)), "thick": 0.15, "cost": "wood"})
 	for k in [1, 3]:
 		var b := Basis(Vector3.UP, deg_to_rad(k * 90.0))
 		var x0 := -4.2 if k == 1 else 0.2
-		pieces.append({"id": "ROOF_%d" % (k + 1), "poly": PackedVector2Array([Vector2(x0, 0.2), Vector2(x0 + 4.0, 0.2), Vector2(x0 + 2.0, 1.4)]),
+		pieces.append({"id": "%s_%d" % [rid, k + 1], "poly": PackedVector2Array([Vector2(x0, 0.2), Vector2(x0 + 4.0, 0.2), Vector2(x0 + 2.0, 1.4)]),
 			"mesh_poly": tri, "xf": Transform3D(b, o + b * Vector3(0, 3.0, 2.0)), "thick": 0.3, "cost": "wood"})
-	return {"id": "ROOF", "name": "السقف", "w": 10.0, "h": 4.2, "pieces": pieces, "openings": []}
+	return {"id": rid, "name": title, "w": 10.0, "h": 4.2, "pieces": pieces, "openings": []}
 
 static func make_boards() -> Array:
 	var out: Array = []
@@ -117,4 +118,13 @@ static func make_boards() -> Array:
 		if s == 0:
 			op2 = [Rect2(-0.8, 0.0, 1.6, 1.2)]
 		out.append(wall_board("S%d" % s, "السور %d من 4" % (s + 1), 11.0, 1.2, 6, 2, 0.5, "stone", b2, o + b2 * Vector3(0, 0, 6), op2, 200 + s))
+	# barn (unlocked after the first animal is caught): 4 plank walls + roof, same puzzle system
+	var bn := ["الحظيرة: الواجهة الأمامية (البوابة)", "الحظيرة: الجدار الأيمن", "الحظيرة: الجدار الخلفي", "الحظيرة: الجدار الأيسر"]
+	for k in 4:
+		var b3 := Basis(Vector3.UP, deg_to_rad(k * 90.0))
+		var op3: Array = []
+		if k == 0:
+			op3 = [Rect2(-0.6, 0.0, 1.2, 1.9)]
+		out.append(wall_board("B%d" % k, bn[k], 4.0, 2.4, 8, 4, 0.3, "wood", b3, BARN + b3 * Vector3(0, 0, 2), op3, 300 + k))
+	out.append(roof_board(BARN, "BROOF", "سقف الحظيرة"))
 	return out

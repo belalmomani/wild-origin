@@ -19,8 +19,16 @@ func remaining(bi: int) -> int:
 			n += 1
 	return n
 
+func barn_done() -> bool:
+	for i in boards.size():
+		if str(boards[i].id).begins_with("B") and remaining(i) > 0:
+			return false
+	return true
+
 func current_index() -> int:
 	for i in boards.size():
+		if str(boards[i].id).begins_with("B") and not GameState.barn_unlocked:
+			continue
 		if remaining(i) > 0:
 			return i
 	return -1
