@@ -3,6 +3,7 @@ extends CanvasLayer
 ## All touches go through _input so joystick + buttons work simultaneously (multi-touch).
 signal action(name: String)
 const PuzzleS := preload("res://scripts/puzzle_view.gd")
+const TechS := preload("res://scripts/tech_view.gd")
 
 var buttons := {}
 var menu_btns: Array = []
@@ -30,6 +31,9 @@ var cam_id := -1
 var stick_center := Vector2.ZERO
 var in_menu := true
 var in_puzzle := false
+var in_tech := false
+var tech
+var tech_btns: Array = []
 var _tween: Tween
 
 func _ready() -> void:
@@ -43,6 +47,10 @@ func _ready() -> void:
 	puzzle.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	puzzle.visible = false
 	add_child(puzzle)
+	tech = TechS.new()
+	tech.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	tech.visible = false
+	add_child(tech)
 	title_label = _label(64)
 	title_label.text = "WILD ORIGIN\nبداية العالم"
 	res_label = _label(26)
@@ -63,7 +71,7 @@ func _ready() -> void:
 	stick_base = _circle(180, Color(1, 1, 1, 0.18))
 	stick_knob = _circle(80, Color(1, 1, 1, 0.45))
 	for n in [["new", "لعبة جديدة", "menu"], ["continue", "متابعة اللعبة", "menu"], ["quality", "الجودة", "menu"], ["sound", "الصوت", "menu"], ["day", "مدة اليوم", "menu"], ["gentle", "تخفيف المشاهد", "menu"],
-			["jump", "قفز", "hud"], ["interact", "تفاعل", "hud"], ["build", "بناء", "hud"], ["torch", "مشعل", "hud"], ["crouch", "انحناء", "hud"], ["plant", "زرع", "hud"], ["water", "سقي", "hud"], ["aim", "تصويب", "hud"], ["weapon", "سلاح", "hud"], ["speed", "تسريع", "special"], ["fire", "إطلاق", "special"], ["save", "حفظ", "hud"],
+			["jump", "قفز", "hud"], ["interact", "تفاعل", "hud"], ["build", "بناء", "hud"], ["torch", "مشعل", "hud"], ["crouch", "انحناء", "hud"], ["plant", "زرع", "hud"], ["water", "سقي", "hud"], ["tech", "تقنيات", "hud"], ["tresearch", "تطوير", "tech"], ["tclose", "إغلاق", "tech"], ["tup", "▲", "tech"], ["tdown", "▼", "tech"], ["aim", "تصويب", "hud"], ["weapon", "سلاح", "hud"], ["speed", "تسريع", "special"], ["fire", "إطلاق", "special"], ["save", "حفظ", "hud"],
 			["hint", "تلميح", "puzzle"], ["pclose", "إغلاق", "puzzle"], ["pleft", "◀", "puzzle"], ["pright", "▶", "puzzle"]]:
 		_btn(n[0], n[1], n[2])
 	get_viewport().size_changed.connect(_layout)
@@ -106,6 +114,7 @@ func _btn(n: String, text: String, group: String) -> void:
 		"menu": menu_btns.append(b)
 		"hud": hud_btns.append(b)
 		"special": pass
+		"tech": tech_btns.append(b)
 		_: puzzle_btns.append(b)
 
 func _put(n: String, pos: Vector2, sz: Vector2) -> void:
@@ -133,6 +142,12 @@ func _layout() -> void:
 	hunt_label.size = Vector2(vp.x, 30)
 	crosshair.position = Vector2(vp.x * 0.5 - 30.0, vp.y * 0.5 - 38.0)
 	crosshair.size = Vector2(60, 60)
+	_put("tech", Vector2(vp.x - 600, vp.y - 220), Vector2(130, 100))
+	_put("tresearch", Vector2(vp.x / 2.0 - 170.0, vp.y - 110.0), Vector2(340, 90))
+	_put("tclose", Vector2(20, vp.y - 110.0), Vector2(160, 90))
+	_put("tup", Vector2(vp.x - 200.0, vp.y - 110.0), Vector2(80, 90))
+	_put("tdown", Vector2(vp.x - 100.0, vp.y - 110.0), Vector2(80, 90))
+	tech.layout(vp)
 	_put("aim", Vector2(vp.x - 320, vp.y - 340), Vector2(130, 100))
 	_put("weapon", Vector2(vp.x - 600, vp.y - 110), Vector2(130, 100))
 	_put("speed", Vector2(20, 84), Vector2(170, 64))
@@ -172,6 +187,17 @@ func open_puzzle(board: Dictionary) -> void:
 	puzzle.open(board)
 	_set_mode()
 
+func open_tech() -> void:
+	in_tech = true
+	_layout()
+	tech.open()
+	_set_mode()
+
+func close_tech() -> void:
+	in_tech = false
+	tech.visible = false
+	_set_mode()
+
 func close_puzzle() -> void:
 	in_puzzle = false
 	puzzle.visible = false
@@ -183,12 +209,14 @@ func _set_mode() -> void:
 	for b in menu_btns:
 		b.visible = in_menu
 	for b in hud_btns:
-		b.visible = not in_menu and not in_puzzle
+		b.visible = not in_menu and not in_puzzle and not in_tech
+	for b in tech_btns:
+		b.visible = in_tech
 	for b in puzzle_btns:
 		b.visible = in_puzzle
 	puzzle_info.visible = in_puzzle
 	for l in [res_label, quest_label, crop_label, hunt_label]:
-		l.visible = not in_menu and not in_puzzle
+		l.visible = not in_menu and not in_puzzle and not in_tech
 	_special()
 
 func set_quality_text(q: int) -> void:
@@ -212,7 +240,7 @@ func set_hunt(text: String) -> void:
 	hunt_label.text = text
 
 func _special() -> void:
-	var show_hud := not in_menu and not in_puzzle
+	var show_hud := not in_menu and not in_puzzle and not in_tech
 	buttons["fire"].visible = show_hud and aim_on
 	buttons["speed"].visible = show_hud and speed_on
 	crosshair.visible = show_hud and aim_on
@@ -270,6 +298,9 @@ func _press(idx: int, pos: Vector2) -> void:
 			action.emit(n)
 			return
 	if in_menu:
+		return
+	if in_tech:
+		tech.tap(pos)
 		return
 	if in_puzzle:
 		if puzzle.press(pos):

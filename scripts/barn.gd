@@ -75,8 +75,9 @@ func _feed_item() -> String:
 	if GameState.count("apples") > 0:
 		return "apples"
 	if GameState.spend("wood", 3):
-		GameState.add("hay", 4)
-		message.emit("صنعتَ قشًّا للعلف (3 خشب → 4)")
+		var hay := 6 if GameState.has_tech("hay2") else 4
+		GameState.add("hay", hay)
+		message.emit("صنعتَ قشًّا للعلف (3 خشب → %d)" % hay)
 		return "hay"
 	return ""
 

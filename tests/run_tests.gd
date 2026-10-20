@@ -97,6 +97,19 @@ func _init() -> void:
 		B.step(off, now, 1.0 / 60.0, true)
 	if off.dead or float(off.h) < 0.34:
 		print("FAIL offline animal must not die"); fails += 1
+	var TL = load("res://scripts/tech_logic.gd")
+	var seen := {}
+	for t in TL.TECHS:
+		if seen.has(t["id"]):
+			print("FAIL duplicate tech ", t["id"]); fails += 1
+		seen[t["id"]] = true
+	for t in TL.TECHS:
+		for rq in t["req"]:
+			if not seen.has(rq):
+				print("FAIL tech ", t["id"], " requires unknown ", rq); fails += 1
+	var tools: Dictionary = TL.by_id("tools")
+	if TL.status(tools, [], 1, {"wood": 8, "stone": 4}) != "ready" or TL.status(tools, [], 1, {}) != "res" or TL.status(TL.by_id("axe2"), [], 5, {"wood": 99, "stone": 99}) != "req" or TL.status(TL.by_id("roads"), ["build_save"], 99, {}) != "future" or TL.status(tools, ["tools"], 1, {}) != "done":
+		print("FAIL tech status"); fails += 1
 	var gs = load("res://scripts/game_state.gd").new()
 	gs.add("wood", 5)
 	gs.placed["F0_1"] = true
@@ -108,6 +121,13 @@ func _init() -> void:
 	gs.from_dict(d)
 	if gs.count("wood") != 5 or not gs.placed.has("F0_1") or not gs.removed.has(1003) or gs.crops.size() != 1 or absf(gs.clock_hours - 100.5) > 0.01 or int(gs.crops[0].id) != 9:
 		print("FAIL save round-trip"); fails += 1
+	gs.reset()
+	gs.xp = 100
+	gs.add("wood", 500)
+	gs.add("stone", 500)
+	if gs.count("wood") != 150 or gs.research("axe2") == "" or gs.research("tools") != "" or not gs.has_tech("tools") or gs.cap_of("wood") != 150:
+		print("FAIL capacity/research: ", gs.count("wood")); fails += 1
+	gs.reset()
 	if gs.spend("stone", 1):
 		print("FAIL spend with no stone"); fails += 1
 	print("TESTS ", "FAILED" if fails > 0 else "PASSED")

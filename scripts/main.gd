@@ -108,6 +108,25 @@ func _smoke() -> void:
 		get_tree().quit(1)
 		return
 	print("SMOKE barn OK")
+	GameState.xp = 400
+	GameState.add("wood", 300)
+	GameState.add("stone", 150)
+	GameState.add("apples", 30)
+	for tid in ["tools", "stealth", "axe2", "pick2", "lamps", "storage", "build_save", "lantern", "compost", "hay2"]:
+		var why := GameState.research(tid)
+		if why != "":
+			print("SMOKE FAIL: research ", tid, " -> ", why)
+			get_tree().quit(1)
+			return
+		GameState.add("wood", 40)
+		GameState.add("stone", 20)
+		GameState.add("apples", 6)
+	_apply_techs()
+	if lamp_lights.size() != 6 or GameState.cap_of("wood") != 400:
+		print("SMOKE FAIL: tech effects")
+		get_tree().quit(1)
+		return
+	print("SMOKE tech OK")
 	await get_tree().create_timer(0.3).timeout
 	await get_tree().create_timer(1.0).timeout
 	print("SMOKE OK pieces placed: ", GameState.placed.size())
@@ -185,6 +204,7 @@ func _start(is_new: bool) -> void:
 		var away := maxf(0.0, Time.get_unix_time_from_system() - GameState.saved_unix)
 		_offline(away * 24.0 / GameState.day_seconds)
 	_apply_quality()
+	_apply_techs()
 	ui.hide_menu()
 	player.play_intro()
 	ui.cinematic_bars(3.5)
@@ -236,6 +256,18 @@ func _on_action(a: String) -> void:
 			ui.set_sound_text(not GameState.muted)
 			GameState.save_settings()
 		"jump": player.jump_req = true
+		"tech": ui.open_tech()
+		"tclose": ui.close_tech()
+		"tup": ui.tech.scroll_by(-1)
+		"tdown": ui.tech.scroll_by(1)
+		"tresearch":
+			var tid: String = ui.tech.selected_id()
+			var why := GameState.research(tid)
+			if why == "":
+				ui.toast("تم التطوير: %s ✓" % preload("res://scripts/tech_logic.gd").by_id(tid)["name"], 3.0)
+				_apply_techs()
+			else:
+				ui.toast(why, 2.5)
 		"aim": hunt.toggle_aim()
 		"fire": hunt.fire()
 		"weapon": hunt.cycle_weapon()
@@ -300,6 +332,49 @@ func _hint() -> void:
 	else:
 		ui.toast("نفدت التلميحات ولا يتوفر إعلان الآن — جرّب بنفسك!")
 
+var lamp_lights: Array = []
+
+## Apply tech effects that need scene objects (lamp posts, torch strength). Safe to call repeatedly.
+func _apply_techs() -> void:
+	player.torch.light_energy = 4.0 if GameState.has_tech("lantern") else 2.5
+	player.torch.omni_range = 18.0 if GameState.has_tech("lantern") else 12.0
+	if GameState.has_tech("lamps") and lamp_lights.is_empty():
+		var BD := preload("res://scripts/building_data.gd")
+		var pts: Array = [Vector3(-6.8, 0, 6.8), Vector3(6.8, 0, 6.8), Vector3(-6.8, 0, -6.8), Vector3(6.8, 0, -6.8),
+			BD.BARN + Vector3(-3.0, 0, 3.2), BD.BARN + Vector3(3.0, 0, 3.2)]
+		for p in pts:
+			var base := Vector3(p.x, world.height_at(p.x, p.z), p.z)
+			var pole := MeshInstance3D.new()
+			var cm := CylinderMesh.new()
+			cm.top_radius = 0.05
+			cm.bottom_radius = 0.07
+			cm.height = 2.6
+			pole.mesh = cm
+			pole.position = base + Vector3(0, 1.3, 0)
+			pole.material_override = preload("res://scripts/mats.gd").pbr("bark", Color(0.8, 0.7, 0.6), 1.5, 0.9)
+			add_child(pole)
+			var bulb := MeshInstance3D.new()
+			var sm := SphereMesh.new()
+			sm.radius = 0.12
+			sm.height = 0.24
+			bulb.mesh = sm
+			bulb.position = base + Vector3(0, 2.7, 0)
+			var bm := StandardMaterial3D.new()
+			bm.albedo_color = Color(1.0, 0.85, 0.5)
+			bm.emission_enabled = true
+			bm.emission = Color(1.0, 0.75, 0.35)
+			bm.emission_energy_multiplier = 2.0
+			bulb.material_override = bm
+			add_child(bulb)
+			var l := OmniLight3D.new()
+			l.omni_range = 9.0
+			l.light_energy = 1.6
+			l.light_color = Color(1.0, 0.8, 0.5)
+			l.position = base + Vector3(0, 2.8, 0)
+			l.visible = false
+			add_child(l)
+			lamp_lights.append(l)
+
 func _torch() -> void:
 	if not GameState.torch_owned:
 		if GameState.spend("wood", 2):
@@ -333,19 +408,21 @@ func _interact() -> void:
 		farm.interact(int(best.get_meta("cid")))
 		return
 	player.play_action("chop" if best.is_in_group("tree") else "gather", 0.9)
-	var hp: int = int(best.get_meta("hp")) - 1
+	var hp: int = int(best.get_meta("hp")) - (2 if GameState.has_tech("tools") else 1)
 	if hp > 0:
 		best.set_meta("hp", hp)
 		ui.toast("ضربة! متبقي %d" % hp, 1.0)
 		return
 	GameState.removed[int(best.get_meta("id"))] = true
 	if best.is_in_group("tree"):
-		GameState.add("wood", 5)
-		ui.toast("+5 خشب")
+		var wn := 8 if GameState.has_tech("axe2") else 5
+		var gw := GameState.add("wood", wn)
+		ui.toast("+%d خشب" % gw if gw == wn else "الحقيبة ممتلئة! (+%d خشب) — طوّر التخزين" % gw)
 	else:
-		GameState.add("stone", 6)
+		var sn := 9 if GameState.has_tech("pick2") else 6
+		var gs2 := GameState.add("stone", sn)
 		player.carry_t = 6.0
-		ui.toast("+6 حجارة")
+		ui.toast("+%d حجارة" % gs2 if gs2 == sn else "الحقيبة ممتلئة! (+%d حجارة) — طوّر التخزين" % gs2)
 	GameState.xp += 1
 	best.queue_free()
 
@@ -379,6 +456,9 @@ func _hud() -> void:
 		q = "%s — متبقي %d قطعة — لديك %d %s. اجمع ثم اضغط «بناء»" % [b.name, builder.remaining(bi), g.count(cost), "حجارة" if cost == "stone" else "خشب"]
 	var hr := int(g.time_of_day)
 	var res := "خشب %d | حجر %d | بذور %d | تفاح %d | مستوى %d | الوقت %02d:%02d" % [g.count("wood"), g.count("stone"), g.count("seeds"), g.count("apples"), g.level(), hr, int((g.time_of_day - hr) * 60.0)]
+	var night := GameState.time_of_day < 6.0 or GameState.time_of_day >= 18.5
+	for l in lamp_lights:
+		l.visible = night
 	GameState.barn_built = GameState.barn_unlocked and builder.barn_done()
 	var ct: String = farm.info_text(player.global_position)
 	if ct == "":

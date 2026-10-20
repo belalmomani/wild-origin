@@ -25,6 +25,8 @@ var barn_unlocked := false     # first live animal caught -> barn quest opens
 var barn_built := false
 var pen: Array = []             # animals housed at the barn (see barn_logic.gd)
 var next_pen_id := 1
+const TL := preload("res://scripts/tech_logic.gd")
+var techs: Array = []           # unlocked tech ids
 var gentle := false             # softened hunting visuals
 var quality := 1
 var muted := false
@@ -37,6 +39,7 @@ func reset() -> void:
 	barn_unlocked = false
 	barn_built = false
 	pen = []
+	techs = []
 	next_pen_id = 1
 	weapons = ["slingshot"]
 	weapon_idx = 0
@@ -54,8 +57,37 @@ func reset() -> void:
 	xp = 0
 	torch_owned = false
 
-func add(k: String, n: int) -> void:
-	inv[k] = int(inv.get(k, 0)) + n
+func has_tech(id: String) -> bool:
+	return techs.has(id)
+
+func cap_of(k: String) -> int:
+	match k:
+		"wood", "stone":
+			return 400 if has_tech("storage") else 150
+		"apples", "meat", "hay":
+			return 100 if has_tech("storage") else 40
+	return 99999
+
+## Adds up to the carry capacity. Returns how many were actually added.
+func add(k: String, n: int) -> int:
+	var cur := int(inv.get(k, 0))
+	var nv := mini(cap_of(k), cur + n)
+	inv[k] = maxi(cur, nv)
+	return int(inv[k]) - cur
+
+## Spend resources and unlock a tech. Returns "" on success, otherwise the reason text.
+func research(id: String) -> String:
+	var t: Dictionary = TL.by_id(id)
+	if t.is_empty():
+		return "تقنية غير موجودة"
+	var st: String = TL.status(t, techs, level(), inv)
+	if st != "ready":
+		return TL.reason_text(st, t)
+	var cost: Dictionary = t["cost"]
+	for k in cost:
+		spend(k, int(cost[k]))
+	techs.append(id)
+	return ""
 
 func count(k: String) -> int:
 	return int(inv.get(k, 0))
@@ -73,7 +105,7 @@ func to_dict() -> Dictionary:
 	return {"v": 1, "inv": inv, "placed": placed.keys(), "removed": removed.keys(),
 		"pos": [player_pos.x, player_pos.y, player_pos.z], "t": time_of_day,
 		"hints": hints_left, "phase": phase, "xp": xp, "torch": torch_owned,
-		"clock": clock_hours, "weapons": weapons, "widx": weapon_idx, "livestock": livestock, "animals": animals, "pen": pen, "npid": next_pen_id, "barn_u": barn_unlocked, "crops": crops, "ncid": next_crop_id, "saved": Time.get_unix_time_from_system()}
+		"clock": clock_hours, "weapons": weapons, "widx": weapon_idx, "livestock": livestock, "animals": animals, "pen": pen, "techs": techs, "npid": next_pen_id, "barn_u": barn_unlocked, "crops": crops, "ncid": next_crop_id, "saved": Time.get_unix_time_from_system()}
 
 func from_dict(d: Dictionary) -> void:
 	reset()
@@ -96,6 +128,9 @@ func from_dict(d: Dictionary) -> void:
 			livestock.append(e)
 	var an: Dictionary = d.get("animals", {})
 	animals = {"deer": int(an.get("deer", 0)), "chicken": int(an.get("chicken", 0))}
+	techs = []
+	for tid in d.get("techs", []):
+		techs.append(str(tid))
 	pen = []
 	for e in d.get("pen", []):
 		if typeof(e) == TYPE_DICTIONARY:

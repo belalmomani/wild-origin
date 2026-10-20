@@ -154,7 +154,7 @@ func tick(d: float, ppos: Vector3, crouch: bool, world) -> void:
 	var away := global_position - ppos
 	away.y = 0.0
 	var dist := away.length()
-	var alert: float = info["flee"] * (0.5 if crouch else 1.0)
+	var alert: float = info["flee"] * (0.5 if crouch else 1.0) * (0.7 if GameState.has_tech("stealth") else 1.0)
 	if wounded:
 		wound_t += d
 		if wound_t > 25.0:

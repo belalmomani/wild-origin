@@ -178,13 +178,13 @@ func interact(cid: int) -> void:
 		message.emit("أزلتَ الشجرة الميتة (+1 خشب). ازرع بذرة جديدة.")
 	elif c.fruit:
 		L.harvest(c, _now())
-		GameState.add("apples", 3)
+		GameState.add("apples", 4 if GameState.has_tech("compost") else 3)
 		var got_seed := randf() < 0.4
 		if got_seed:
 			GameState.add("seeds", 1)
 		_refresh(c)
 		GameState.xp += 2
-		message.emit("+3 تفاح" + (" و+1 بذرة" if got_seed else ""))
+		message.emit(("+4 تفاح" if GameState.has_tech("compost") else "+3 تفاح") + (" و+1 بذرة" if got_seed else ""))
 	else:
 		message.emit("%s — %s" % [L.stage(c), info_bars(c)])
 

@@ -37,7 +37,8 @@ func place(bi: int, pi: int) -> bool:
 	var p: Dictionary = boards[bi].pieces[pi]
 	if GameState.placed.has(p.id):
 		return false
-	if not GameState.spend(p.cost, 1):
+	var free := GameState.has_tech("build_save") and GameState.placed.size() % 2 == 1
+	if not free and not GameState.spend(p.cost, 1):
 		message.emit("ينقصك %s — اجمع المزيد" % ("حجارة" if p.cost == "stone" else "خشب"))
 		return false
 	GameState.placed[p.id] = true
