@@ -66,21 +66,21 @@ func _init() -> void:
 		print("FAIL hunt outcomes ", r1, r2, r3, r4); fails += 1
 	var B = load("res://scripts/barn_logic.gd")
 	var an = B.new_animal(1, "deer", 0.0)
-	var warn_day := -1.0
-	var starve_day := -1.0
-	var dead_day := -1.0
+	var b_warn := -1.0
+	var b_starve := -1.0
+	var b_dead := -1.0
 	now = 0.0
 	for i in 600:
 		now += 1.0 / 60.0
 		var ev: String = B.step(an, now, 1.0 / 60.0, false)
-		if ev == "hungry" and warn_day < 0.0:
-			warn_day = now
-		if ev == "starving" and starve_day < 0.0:
-			starve_day = now
-		if ev == "dead" and dead_day < 0.0:
-			dead_day = now
-	if warn_day < 0.7 or warn_day > 0.85 or starve_day < 0.95 or starve_day > 1.1 or dead_day < 4.0 or dead_day > 6.5:
-		print("FAIL barn neglect: ", warn_day, " ", starve_day, " ", dead_day); fails += 1
+		if ev == "hungry" and b_warn < 0.0:
+			b_warn = now
+		if ev == "starving" and b_starve < 0.0:
+			b_starve = now
+		if ev == "dead" and b_dead < 0.0:
+			b_dead = now
+	if b_warn < 0.7 or b_warn > 0.85 or b_starve < 0.95 or b_starve > 1.1 or b_dead < 4.0 or b_dead > 6.5:
+		print("FAIL barn neglect: ", b_warn, " ", b_starve, " ", b_dead); fails += 1
 	var fed = B.new_animal(2, "chicken", 0.0)
 	now = 0.0
 	for i in 600:
