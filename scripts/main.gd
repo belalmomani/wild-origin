@@ -7,6 +7,7 @@ const BuildS := preload("res://scripts/building.gd")
 const FarmS := preload("res://scripts/farm.gd")
 const HuntS := preload("res://scripts/hunt.gd")
 const BarnS := preload("res://scripts/barn.gd")
+const SfxS := preload("res://scripts/sfx.gd")
 
 var world
 var player
@@ -15,6 +16,8 @@ var builder
 var farm
 var hunt
 var barn
+var sfx
+var _cluck_t := 4.0
 var sun: DirectionalLight3D
 var sky: ProceduralSkyMaterial
 var env: Environment
@@ -24,7 +27,9 @@ var save_t := 0.0
 
 func _ready() -> void:
 	GameState.load_settings()
-	AudioServer.set_bus_mute(0, GameState.muted)
+	_apply_volume()
+	sfx = SfxS.new()
+	add_child(sfx)
 	_setup_env()
 	ui = UIS.new()
 	add_child(ui)
@@ -32,7 +37,7 @@ func _ready() -> void:
 	ui.puzzle.dropped.connect(_on_drop)
 	Ads.reward_granted.connect(func(pl): if pl == "hint": ui.puzzle.show_hint())
 	ui.set_quality_text(GameState.quality)
-	ui.set_sound_text(not GameState.muted)
+	ui.set_sound_text(GameState.volume_idx)
 	ui.set_day_text(GameState.day_seconds)
 	ui.set_gentle_text(GameState.gentle)
 	ui.show_menu(GameState.has_save())
@@ -127,6 +132,11 @@ func _smoke() -> void:
 		get_tree().quit(1)
 		return
 	print("SMOKE tech OK")
+	if not sfx.is_ready():
+		print("SMOKE FAIL: audio files missing")
+		get_tree().quit(1)
+		return
+	print("SMOKE audio OK")
 	await get_tree().create_timer(0.3).timeout
 	await get_tree().create_timer(1.0).timeout
 	print("SMOKE OK pieces placed: ", GameState.placed.size())
@@ -196,6 +206,7 @@ func _start(is_new: bool) -> void:
 	add_child(hunt)
 	hunt.message.connect(func(t): ui.toast(t, 3.5))
 	hunt.aim_changed.connect(ui.set_aim_mode)
+	hunt.sound.connect(func(n): sfx.play(n, -2.0))
 	barn = BarnS.new()
 	barn.world = world
 	add_child(barn)
@@ -241,7 +252,17 @@ func _apply_quality() -> void:
 	if world:
 		world.apply_quality(q)
 
+func _apply_volume() -> void:
+	var lv := [1.0, 0.6, 0.3, 0.0]
+	var v: float = lv[GameState.volume_idx]
+	AudioServer.set_bus_mute(0, v <= 0.0)
+	AudioServer.set_bus_volume_db(0, linear_to_db(maxf(v, 0.001)))
+
 func _on_action(a: String) -> void:
+	if a == "jump":
+		sfx.play("jump", -8.0)
+	elif a != "interact" and a != "fire":
+		sfx.play("click", -10.0)
 	match a:
 		"new": _start(true)
 		"continue": _start(false)
@@ -251,9 +272,9 @@ func _on_action(a: String) -> void:
 			GameState.save_settings()
 			_apply_quality()
 		"sound":
-			GameState.muted = not GameState.muted
-			AudioServer.set_bus_mute(0, GameState.muted)
-			ui.set_sound_text(not GameState.muted)
+			GameState.volume_idx = (GameState.volume_idx + 1) % 4
+			_apply_volume()
+			ui.set_sound_text(GameState.volume_idx)
 			GameState.save_settings()
 		"jump": player.jump_req = true
 		"tech": ui.open_tech()
@@ -264,6 +285,7 @@ func _on_action(a: String) -> void:
 			var tid: String = ui.tech.selected_id()
 			var why := GameState.research(tid)
 			if why == "":
+				sfx.play("chime", -4.0)
 				ui.toast("تم التطوير: %s ✓" % preload("res://scripts/tech_logic.gd").by_id(tid)["name"], 3.0)
 				_apply_techs()
 			else:
@@ -280,9 +302,11 @@ func _on_action(a: String) -> void:
 			var fwd := Vector3(0, 0, -1.4).rotated(Vector3.UP, player.body.rotation.y)
 			if farm.plant(player.global_position + fwd):
 				player.play_action("gather", 1.0)
+				sfx.play("harvest", -6.0, 0.8)
 		"water":
 			if farm.water_near(player.global_position):
 				player.play_action("gather", 0.8)
+				sfx.play("water", -4.0)
 		"day":
 			var cur := GameState.day_seconds
 			GameState.day_seconds = 1440.0 if cur < 1000.0 else (2880.0 if cur < 2000.0 else 720.0)
@@ -314,6 +338,7 @@ func _on_drop(pi: int) -> void:
 	if bi < 0:
 		return
 	if builder.place(bi, pi):
+		sfx.play("place", -2.0, randf_range(0.9, 1.1))
 		ui.puzzle.refresh()
 		if builder.remaining(bi) == 0:
 			ui.toast("اكتملت: %s ✓" % builder.boards[bi].name, 3.0)
@@ -408,6 +433,7 @@ func _interact() -> void:
 		farm.interact(int(best.get_meta("cid")))
 		return
 	player.play_action("chop" if best.is_in_group("tree") else "gather", 0.9)
+	sfx.play("chop" if best.is_in_group("tree") else "rock", -3.0, randf_range(0.92, 1.08))
 	var hp: int = int(best.get_meta("hp")) - (2 if GameState.has_tech("tools") else 1)
 	if hp > 0:
 		best.set_meta("hp", hp)
@@ -424,11 +450,21 @@ func _interact() -> void:
 		player.carry_t = 6.0
 		ui.toast("+%d حجارة" % gs2 if gs2 == sn else "الحقيبة ممتلئة! (+%d حجارة) — طوّر التخزين" % gs2)
 	GameState.xp += 1
+	sfx.play("harvest", -6.0)
 	best.queue_free()
 
 func _process(d: float) -> void:
+	sfx.update(d, GameState.time_of_day, playing)
 	if not playing:
 		return
+	sfx.footsteps(d, Vector2(player.velocity.x, player.velocity.z).length(), player.is_on_floor(), player.crouch)
+	_cluck_t -= d
+	if _cluck_t <= 0.0:
+		_cluck_t = randf_range(5.0, 12.0)
+		for a in hunt.animals:
+			if is_instance_valid(a) and a.kind == "chicken" and not a.dead and a.global_position.distance_to(player.global_position) < 30.0:
+				sfx.play_at(a.global_position + Vector3(0, 0.4, 0))
+				break
 	var dh := d * 24.0 / GameState.day_seconds
 	GameState.clock_hours += dh
 	GameState.time_of_day = fposmod(GameState.clock_hours, 24.0)

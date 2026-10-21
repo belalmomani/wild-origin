@@ -4,6 +4,7 @@ extends Node3D
 ## wounded ones limp, tire out, and can be caught and carried to the farm (3 min trip, optional ad speed-up).
 signal message(text: String)
 signal aim_changed(on: bool)
+signal sound(name: String)
 const L := preload("res://scripts/hunt_logic.gd")
 const AnimalS := preload("res://scripts/animal.gd")
 const BL := preload("res://scripts/barn_logic.gd")
@@ -146,6 +147,7 @@ func fire() -> void:
 			return
 	GameState.spend(ammo, 1)
 	cooldown = 0.7
+	sound.emit("shot_sling" if wid == "slingshot" else "shot_bow")
 	var cam: Camera3D = player.cam
 	var c := cam.get_viewport().get_visible_rect().size * 0.5
 	var o := cam.project_ray_origin(c)
@@ -167,6 +169,7 @@ func apply_hit(a, zone: String) -> void:
 	var wid: String = GameState.weapons[GameState.weapon_idx]
 	var r := L.shot(wid, zone, a.hp, a.max_hp)
 	a.hp = r["hp"]
+	sound.emit("hit")
 	var nm: String = L.ANIMALS[a.kind]["name"]
 	var names := {"head": "الرأس", "body": "الجسم", "legs": "الساق"}
 	var zn: String = names[zone]

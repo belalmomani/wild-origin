@@ -27,6 +27,7 @@ var pen: Array = []             # animals housed at the barn (see barn_logic.gd)
 var next_pen_id := 1
 const TL := preload("res://scripts/tech_logic.gd")
 var techs: Array = []           # unlocked tech ids
+var volume_idx := 0            # 0 high, 1 medium, 2 low, 3 muted
 var gentle := false             # softened hunting visuals
 var quality := 1
 var muted := false
@@ -181,7 +182,7 @@ func load_game() -> bool:
 func save_settings() -> void:
 	var f := FileAccess.open(SETTINGS_PATH, FileAccess.WRITE)
 	if f:
-		f.store_string(JSON.stringify({"q": quality, "mute": muted, "tut": tutorial_done, "day": day_seconds, "gentle": gentle}))
+		f.store_string(JSON.stringify({"q": quality, "mute": muted, "tut": tutorial_done, "day": day_seconds, "gentle": gentle, "vol": volume_idx}))
 
 func load_settings() -> void:
 	if not FileAccess.file_exists(SETTINGS_PATH):
@@ -192,4 +193,5 @@ func load_settings() -> void:
 		muted = bool(data.get("mute", false))
 		tutorial_done = bool(data.get("tut", false))
 		gentle = bool(data.get("gentle", false))
+		volume_idx = clampi(int(data.get("vol", 0)), 0, 3)
 		day_seconds = clampf(float(data.get("day", 720.0)), 300.0, 5000.0)

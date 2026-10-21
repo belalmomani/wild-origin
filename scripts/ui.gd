@@ -222,8 +222,8 @@ func _set_mode() -> void:
 func set_quality_text(q: int) -> void:
 	buttons["quality"].text = "الجودة: " + ["منخفضة", "متوسطة", "عالية"][q]
 
-func set_sound_text(on: bool) -> void:
-	buttons["sound"].text = "الصوت: " + ("مفعّل" if on else "مكتوم")
+func set_sound_text(idx: int) -> void:
+	buttons["sound"].text = "الصوت: " + ["عالٍ", "متوسط", "منخفض", "مكتوم"][idx]
 
 func set_gentle_text(on: bool) -> void:
 	buttons["gentle"].text = "تخفيف المشاهد: " + ("مفعّل" if on else "معطّل")
