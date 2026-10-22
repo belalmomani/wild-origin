@@ -16,7 +16,11 @@ var action := ""
 var action_left := 0.0
 var carry_t := 0.0
 var intro_lock := false
+signal footstep
 var aiming := false
+var scoped := false
+var scope_fov := 20.0
+var sway_t := 0.0
 var body: Node3D
 var arm: SpringArm3D
 var cam: Camera3D
@@ -86,6 +90,14 @@ func _hero_anim(spd: float) -> void:
 func set_aim(on: bool) -> void:
 	aiming = on
 
+## Scope view: strong zoom from the head, character hidden, slower look sensitivity, slight breathing sway.
+func set_scope(on: bool, fov: float) -> void:
+	scoped = on
+	scope_fov = fov
+	body.visible = not on
+	if char_node != null and char_node.has_method("set_scoped"):
+		char_node.set_scoped(on)
+
 func play_action(a: String, secs: float) -> void:
 	action = a
 	action_left = secs
@@ -115,6 +127,8 @@ func _ready() -> void:
 	if not _try_hero():
 		char_node = CharacterS.new()
 		body.add_child(char_node)
+	if char_node != null:
+		char_node.footstep.connect(func(): footstep.emit())
 	arm = SpringArm3D.new()
 	arm.position.y = 1.55
 	arm.spring_length = 4.2
@@ -142,9 +156,13 @@ func _physics_process(d: float) -> void:
 	var cd := GameState.cam_delta
 	GameState.cam_delta = Vector2.ZERO
 	if not intro_lock:
-		cam_yaw -= cd.x * 0.006
-		cam_pitch = clampf(cam_pitch - cd.y * 0.006, -1.2, 0.3)
+		var sens := 0.3 if scoped else 1.0
+		cam_yaw -= cd.x * 0.006 * sens
+		cam_pitch = clampf(cam_pitch - cd.y * 0.006 * sens, -1.2, 0.3)
 	arm.rotation = Vector3(cam_pitch, cam_yaw, 0.0)
+	if scoped:
+		sway_t += d
+		arm.rotation += Vector3(sin(sway_t * 1.7) * 0.0012, sin(sway_t * 1.1) * 0.001, 0.0)
 	if action_left > 0.0:
 		action_left -= d
 		if action_left <= 0.0:
@@ -155,8 +173,11 @@ func _physics_process(d: float) -> void:
 	var m := GameState.move if not locked else Vector2.ZERO
 	var top := (CROUCH_SPEED if crouch else SPEED) * (0.5 if aiming else 1.0)
 	if not intro_lock:
-		arm.spring_length = lerpf(arm.spring_length, 2.3 if aiming else 4.2, clampf(8.0 * d, 0.0, 1.0))
-		cam.fov = lerpf(cam.fov, 46.0 if aiming else 62.0, clampf(8.0 * d, 0.0, 1.0))
+		var k := clampf(8.0 * d, 0.0, 1.0)
+		arm.spring_length = lerpf(arm.spring_length, 0.25 if scoped else (2.3 if aiming else 4.2), k)
+		cam.fov = lerpf(cam.fov, scope_fov if scoped else (46.0 if aiming else 62.0), k)
+		cam.h_offset = lerpf(cam.h_offset, 0.0 if scoped else (0.65 if aiming else 0.45), k)
+		cam.v_offset = lerpf(cam.v_offset, 0.0 if scoped else 0.1, k)
 	var dir := Vector3(m.x, 0, m.y).rotated(Vector3.UP, cam_yaw)
 	var speed := m.length() * top
 	if m.length() > 0.01:
@@ -179,6 +200,7 @@ func _physics_process(d: float) -> void:
 	if hero:
 		_hero_anim(spd)
 	elif char_node:
+		char_node.set_weapon(GameState.weapons[GameState.weapon_idx])
 		char_node.animate(d, spd, is_on_floor(), velocity.y, crouch, action if action != "" else ("aim" if aiming else ""), carry_t > 0.0)
 		char_node.set_carrying(carry_t > 0.0)
 	position.x = clampf(position.x, -96.0, 96.0)

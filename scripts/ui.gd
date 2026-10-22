@@ -20,6 +20,10 @@ var crop_label: Label
 var hunt_label: Label
 var crosshair: Label
 var aim_on := false
+var scope_on := false
+var scope_img: TextureRect
+var bar_l: ColorRect
+var bar_r: ColorRect
 var speed_on := false
 var stick_base: Panel
 var stick_knob: Panel
@@ -61,6 +65,20 @@ func _ready() -> void:
 	hunt_label = _label(22)
 	crosshair = _label(54)
 	crosshair.text = "+"
+	scope_img = TextureRect.new()
+	scope_img.texture = load("res://assets/ui/scope.png")
+	scope_img.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	scope_img.stretch_mode = TextureRect.STRETCH_SCALE
+	scope_img.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	scope_img.visible = false
+	add_child(scope_img)
+	bar_l = ColorRect.new()
+	bar_r = ColorRect.new()
+	for side_bar in [bar_l, bar_r]:
+		side_bar.color = Color.BLACK
+		side_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		side_bar.visible = false
+		add_child(side_bar)
 	bar_top = ColorRect.new()
 	bar_bot = ColorRect.new()
 	for bar in [bar_top, bar_bot]:
@@ -71,7 +89,7 @@ func _ready() -> void:
 	stick_base = _circle(180, Color(1, 1, 1, 0.18))
 	stick_knob = _circle(80, Color(1, 1, 1, 0.45))
 	for n in [["new", "لعبة جديدة", "menu"], ["continue", "متابعة اللعبة", "menu"], ["quality", "الجودة", "menu"], ["sound", "الصوت", "menu"], ["day", "مدة اليوم", "menu"], ["gentle", "تخفيف المشاهد", "menu"],
-			["jump", "قفز", "hud"], ["interact", "تفاعل", "hud"], ["build", "بناء", "hud"], ["torch", "مشعل", "hud"], ["crouch", "انحناء", "hud"], ["plant", "زرع", "hud"], ["water", "سقي", "hud"], ["tech", "تقنيات", "hud"], ["tresearch", "تطوير", "tech"], ["tclose", "إغلاق", "tech"], ["tup", "▲", "tech"], ["tdown", "▼", "tech"], ["aim", "تصويب", "hud"], ["weapon", "سلاح", "hud"], ["speed", "تسريع", "special"], ["fire", "إطلاق", "special"], ["save", "حفظ", "hud"],
+			["jump", "قفز", "hud"], ["interact", "تفاعل", "hud"], ["build", "بناء", "hud"], ["torch", "مشعل", "hud"], ["crouch", "انحناء", "hud"], ["plant", "زرع", "hud"], ["water", "سقي", "hud"], ["tech", "تقنيات", "hud"], ["tresearch", "تطوير", "tech"], ["tclose", "إغلاق", "tech"], ["tup", "▲", "tech"], ["tdown", "▼", "tech"], ["aim", "تصويب", "hud"], ["weapon", "سلاح", "hud"], ["speed", "تسريع", "special"], ["scope", "عدسة", "special"], ["fire", "إطلاق", "special"], ["save", "حفظ", "hud"],
 			["hint", "تلميح", "puzzle"], ["pclose", "إغلاق", "puzzle"], ["pleft", "◀", "puzzle"], ["pright", "▶", "puzzle"]]:
 		_btn(n[0], n[1], n[2])
 	get_viewport().size_changed.connect(_layout)
@@ -152,6 +170,13 @@ func _layout() -> void:
 	_put("weapon", Vector2(vp.x - 600, vp.y - 110), Vector2(130, 100))
 	_put("speed", Vector2(20, 84), Vector2(170, 64))
 	_put("fire", Vector2(vp.x - 170, vp.y - 410), Vector2(140, 120))
+	_put("scope", Vector2(vp.x - 330, vp.y - 410), Vector2(140, 120))
+	scope_img.position = Vector2((vp.x - vp.y) * 0.5, 0)
+	scope_img.size = Vector2(vp.y, vp.y)
+	bar_l.position = Vector2.ZERO
+	bar_l.size = Vector2(maxf(0.0, (vp.x - vp.y) * 0.5), vp.y)
+	bar_r.position = Vector2((vp.x + vp.y) * 0.5, 0)
+	bar_r.size = bar_l.size
 	crop_label.position = Vector2(0, 96)
 	crop_label.size = Vector2(vp.x, 70)
 	_put("plant", Vector2(vp.x - 460, vp.y - 220), Vector2(130, 100))
@@ -230,6 +255,12 @@ func set_gentle_text(on: bool) -> void:
 
 func set_aim_mode(on: bool) -> void:
 	aim_on = on
+	if not on:
+		scope_on = false
+	_special()
+
+func set_scope_mode(on: bool) -> void:
+	scope_on = on
 	_special()
 
 func set_speed_visible(on: bool) -> void:
@@ -243,7 +274,11 @@ func _special() -> void:
 	var show_hud := not in_menu and not in_puzzle and not in_tech
 	buttons["fire"].visible = show_hud and aim_on
 	buttons["speed"].visible = show_hud and speed_on
-	crosshair.visible = show_hud and aim_on
+	buttons["scope"].visible = show_hud and aim_on
+	crosshair.visible = show_hud and aim_on and not scope_on
+	scope_img.visible = show_hud and scope_on
+	bar_l.visible = show_hud and scope_on
+	bar_r.visible = show_hud and scope_on
 
 func set_day_text(secs: float) -> void:
 	buttons["day"].text = "مدة اليوم: %d دقيقة" % int(round(secs / 60.0))

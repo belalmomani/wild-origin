@@ -8,6 +8,10 @@ const G := preload("res://scripts/mesh_gen.gd")
 var J := {}              # joint name -> Node3D
 var stone: Node3D
 var axe: Node3D
+signal footstep
+var weapon := "slingshot"
+var walk_w := 0.0
+var prev_cs := 1.0
 var phase := 0.0
 var t := 0.0
 var action_t := 0.0
@@ -177,6 +181,12 @@ func _rot(jn: String, target: Vector3, k: float) -> void:
 	n.rotation = n.rotation.lerp(target, k)
 
 ## state inputs come from player.gd every physics frame
+func set_weapon(id: String) -> void:
+	weapon = id
+
+func set_scoped(_on: bool) -> void:
+	pass
+
 func animate(d: float, spd: float, on_floor: bool, vy: float, crouch: bool, action: String, carrying: bool) -> void:
 	t += d
 	if action != last_action:
@@ -185,37 +195,42 @@ func animate(d: float, spd: float, on_floor: bool, vy: float, crouch: bool, acti
 	action_t += d
 	var k := clampf(d * 14.0, 0.0, 1.0)
 	var amp := clampf(spd / 6.0, 0.0, 1.0)
-	phase += d * spd * 3.4
+	var t_run := clampf((spd - 1.6) / 4.2, 0.0, 1.0)
+	var stride := lerpf(0.62, 1.25, amp)
+	phase += d * spd / stride * PI           # one step per PI: foot speed matches ground speed (no sliding)
 	var sw := sin(phase)
 	var cs := cos(phase)
 	var hip_y := 0.95
-	var tg := {"spine": Vector3.ZERO, "chest": Vector3.ZERO, "head": Vector3.ZERO,
+	var wt := clampf((spd - 0.2) / 1.0, 0.0, 1.0) if on_floor else 0.0
+	walk_w = lerpf(walk_w, wt, clampf(d * 8.0, 0.0, 1.0))      # smooth idle <-> walk <-> run blend
+	if on_floor and walk_w > 0.4 and cs * prev_cs < 0.0:
+		footstep.emit()                       # heel strike
+	prev_cs = cs
+	var tg := {"spine": Vector3.ZERO, "chest": Vector3.ZERO, "head": Vector3.ZERO, "hips": Vector3.ZERO,
 		"shL": Vector3.ZERO, "shR": Vector3.ZERO, "elL": Vector3.ZERO, "elR": Vector3.ZERO,
 		"hipL": Vector3.ZERO, "hipR": Vector3.ZERO, "knL": Vector3.ZERO, "knR": Vector3.ZERO}
-	var moving := spd > 0.35
-	# --- base locomotion ---
-	if moving and on_floor:
-		var big := lerpf(0.5, 0.95, amp)
-		tg["hipL"] = Vector3(sw * big, 0, 0)
-		tg["hipR"] = Vector3(-sw * big, 0, 0)
-		tg["knL"] = Vector3(-(0.12 + maxf(0.0, cs) * lerpf(0.7, 1.5, amp)), 0, 0)
-		tg["knR"] = Vector3(-(0.12 + maxf(0.0, -cs) * lerpf(0.7, 1.5, amp)), 0, 0)
-		tg["shL"] = Vector3(-sw * 0.55 * amp - 0.05, 0, 0.06)
-		tg["shR"] = Vector3(sw * 0.55 * amp - 0.05, 0, -0.06)
-		var bend := lerpf(0.2, 1.35, amp)
-		tg["elL"] = Vector3(bend, 0, 0)
-		tg["elR"] = Vector3(bend, 0, 0)
-		tg["spine"] = Vector3(-0.04 - 0.22 * amp, -sw * 0.1 * amp, 0)
-		tg["head"] = Vector3(0.04 + 0.2 * amp, sw * 0.06 * amp, 0)
-		hip_y = 0.95 - 0.02 + absf(cs) * 0.04 * amp
-	else:
-		tg["shL"] = Vector3(0.03, 0, 0.09)
-		tg["shR"] = Vector3(0.03, 0, -0.09)
-		tg["elL"] = Vector3(0.18, 0, 0)
-		tg["elR"] = Vector3(0.18, 0, 0)
-		tg["spine"] = Vector3(sin(t * 1.6) * 0.012, 0, 0)
-		tg["head"] = Vector3(sin(t * 0.7) * 0.03, sin(t * 0.45) * 0.1, 0)
-		hip_y = 0.95 + sin(t * 1.6) * 0.004
+	# --- locomotion: idle pose blended with a biomechanical gait (arms opposite legs, pelvis twist, knee flexion) ---
+	var idle := {"spine": Vector3(sin(t * 1.6) * 0.012, 0, 0), "head": Vector3(sin(t * 0.7) * 0.03, sin(t * 0.45) * 0.1, 0),
+		"shL": Vector3(0.03, 0, 0.09), "shR": Vector3(0.03, 0, -0.09), "elL": Vector3(0.18, 0, 0), "elR": Vector3(0.18, 0, 0)}
+	var A := lerpf(0.28, 0.42, clampf(spd / 2.2, 0.0, 1.0)) + 0.33 * t_run      # hip swing
+	var K := 0.9 + 0.6 * t_run                                                 # swing-phase knee flexion
+	var arm := 0.30 + 0.35 * t_run
+	var tw := 0.5 + t_run
+	var el := 0.22 + 1.0 * t_run
+	var walk := {
+		"hipL": Vector3(sw * A, 0, 0), "hipR": Vector3(-sw * A, 0, 0),
+		"knL": Vector3(-(0.08 + K * pow(maxf(0.0, cs), 1.4) + 0.14 * pow(maxf(0.0, sw), 2.0)), 0, 0),
+		"knR": Vector3(-(0.08 + K * pow(maxf(0.0, -cs), 1.4) + 0.14 * pow(maxf(0.0, -sw), 2.0)), 0, 0),
+		"shL": Vector3(-sw * arm - 0.04, 0, 0.05), "shR": Vector3(sw * arm - 0.04, 0, -0.05),
+		"elL": Vector3(el + (0.25 + 0.4 * t_run) * maxf(0.0, -sw), 0, 0), "elR": Vector3(el + (0.25 + 0.4 * t_run) * maxf(0.0, sw), 0, 0),
+		"hips": Vector3(0, sw * 0.10 * tw, 0), "spine": Vector3(-(0.03 + 0.2 * t_run), -sw * 0.08 * tw, 0),
+		"head": Vector3(0.03 + 0.15 * t_run, sw * 0.03, 0)}
+	for key in walk:
+		tg[key] = (idle.get(key, Vector3.ZERO) as Vector3).lerp(walk[key], walk_w)
+	for key in idle:
+		if not walk.has(key):
+			tg[key] = idle[key]
+	hip_y = lerpf(0.95 + sin(t * 1.6) * 0.004, 0.95 - (0.02 + 0.035 * t_run) * (1.0 - absf(cs)), walk_w)
 	# --- airborne ---
 	if not on_floor:
 		if vy > 0.5:
@@ -286,14 +301,30 @@ func animate(d: float, spd: float, on_floor: bool, vy: float, crouch: bool, acti
 			tg["elL"] = Vector3(0.45, 0, 0)
 			tg["elR"] = Vector3(0.45, 0, 0)
 		"aim":
-			tg["shL"] = Vector3(1.55, 0, 0.12)
-			tg["shR"] = Vector3(1.6, 0, -0.1)
-			tg["elL"] = Vector3(0.2, 0, 0)
-			tg["elR"] = Vector3(0.15, 0, 0)
-			tg["spine"] = Vector3(-0.05, 0.3, 0)
-			tg["head"] = Vector3(0.0, -0.3, 0)
 			tg["hipL"] = Vector3(0.2, 0, 0)
 			tg["hipR"] = Vector3(-0.2, 0, 0)
+			match weapon:
+				"bow":       # left arm holds the bow out, right hand draws the string to the cheek
+					tg["shL"] = Vector3(1.55, 0, 0.1)
+					tg["elL"] = Vector3(0.12, 0, 0)
+					tg["shR"] = Vector3(1.2, 0, 0.55)
+					tg["elR"] = Vector3(2.35, 0, 0)
+					tg["spine"] = Vector3(-0.04, 0.0, 0)
+					tg["head"] = Vector3(0.0, -0.25, 0)
+				"crossbow":  # two hands on the stock
+					tg["shL"] = Vector3(1.45, 0, 0.14)
+					tg["elL"] = Vector3(0.5, 0, 0)
+					tg["shR"] = Vector3(1.5, 0, -0.12)
+					tg["elR"] = Vector3(0.35, 0, 0)
+					tg["spine"] = Vector3(-0.05, 0.0, 0)
+					tg["head"] = Vector3(0.05, 0.0, 0)
+				_:           # slingshot: right arm holds the fork, left hand pulls the band back
+					tg["shR"] = Vector3(1.55, 0, -0.08)
+					tg["elR"] = Vector3(0.1, 0, 0)
+					tg["shL"] = Vector3(1.15, 0, 0.3)
+					tg["elL"] = Vector3(2.15, 0, 0)
+					tg["spine"] = Vector3(-0.04, 0.25, 0)
+					tg["head"] = Vector3(0.0, -0.25, 0)
 		"build":
 			hip_y = 0.55
 			tg["hipR"] = Vector3(1.35, 0, 0)
@@ -316,5 +347,8 @@ func animate(d: float, spd: float, on_floor: bool, vy: float, crouch: bool, acti
 		var h: Node3D = J["hip" + s]
 		var kn: Node3D = J["kn" + s]
 		var an: Node3D = J["an" + s]
-		an.rotation.x = clampf(-(h.rotation.x + kn.rotation.x) * 0.75, -0.9, 0.9)
+		var sgn := 1.0 if s == "L" else -1.0
+		var behind := maxf(0.0, -sw * sgn)        # leg behind the body -> toe-off (toes down)
+		var ahead := maxf(0.0, sw * sgn)          # leg ahead -> heel strike (toes up)
+		an.rotation.x = clampf(-(h.rotation.x + kn.rotation.x) * 0.8 - 0.35 * behind * walk_w + 0.14 * pow(ahead, 3.0) * walk_w, -0.9, 0.9)
 	axe.visible = not carrying or action == "chop"

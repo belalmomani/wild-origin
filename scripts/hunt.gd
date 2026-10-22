@@ -5,6 +5,7 @@ extends Node3D
 signal message(text: String)
 signal aim_changed(on: bool)
 signal sound(name: String)
+signal scope_changed(on: bool)
 const L := preload("res://scripts/hunt_logic.gd")
 const AnimalS := preload("res://scripts/animal.gd")
 const BL := preload("res://scripts/barn_logic.gd")
@@ -12,6 +13,7 @@ var world
 var player
 var animals: Array = []
 var aiming := false
+var scoped := false
 var cooldown := 0.0
 var _t := 0.0
 var _rng := RandomNumberGenerator.new()
@@ -89,8 +91,29 @@ func weapon_text() -> String:
 
 func toggle_aim() -> void:
 	aiming = not aiming
+	if not aiming and scoped:
+		_set_scope(false)
 	player.set_aim(aiming)
 	aim_changed.emit(aiming)
+
+func _weapon_id() -> String:
+	return GameState.weapons[GameState.weapon_idx]
+
+## Aim style: normal (over-the-shoulder zoom) or through the scope (bow / crossbow only).
+func toggle_scope() -> void:
+	if not aiming:
+		message.emit("اضغط «تصويب» أولًا")
+		return
+	if _weapon_id() == "slingshot":
+		message.emit("المقلاع لا يدعم العدسة — بدّل السلاح")
+		return
+	_set_scope(not scoped)
+	message.emit("التصويب بالعدسة" if scoped else "التصويب العادي")
+
+func _set_scope(on: bool) -> void:
+	scoped = on
+	player.set_scope(on, 28.0 if _weapon_id() == "bow" else 16.0)
+	scope_changed.emit(on)
 
 func cycle_weapon() -> void:
 	var cur: String = GameState.weapons[GameState.weapon_idx]
@@ -98,6 +121,7 @@ func cycle_weapon() -> void:
 	if GameState.weapons.has(nxt):
 		GameState.weapon_idx = GameState.weapons.find(nxt)
 		message.emit("السلاح: %s" % L.WEAPONS[nxt]["name"])
+		_check_scope()
 	elif GameState.level() >= int(L.WEAPONS[nxt]["level"]):
 		_unlock(nxt)
 	elif Ads.is_available():
@@ -105,6 +129,12 @@ func cycle_weapon() -> void:
 		Ads.show_rewarded("weapon_" + nxt)
 	else:
 		message.emit("%s مقفل — يُفتح بالمستوى %d" % [L.WEAPONS[nxt]["name"], L.WEAPONS[nxt]["level"]])
+
+func _check_scope() -> void:
+	if scoped and _weapon_id() == "slingshot":
+		_set_scope(false)
+	elif scoped:
+		player.set_scope(true, 28.0 if _weapon_id() == "bow" else 16.0)
 
 func _unlock(id: String) -> void:
 	if not GameState.weapons.has(id):

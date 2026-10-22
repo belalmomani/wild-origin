@@ -86,7 +86,16 @@ func _smoke() -> void:
 		return
 	hunt.toggle_aim()
 	hunt.fire()
+	GameState.weapons = ["slingshot", "bow", "crossbow"]
+	GameState.weapon_idx = 1
+	hunt.toggle_scope()
+	await get_tree().create_timer(0.4).timeout
+	GameState.weapon_idx = 2
+	hunt.fire()
+	await get_tree().create_timer(0.3).timeout
+	hunt.toggle_scope()
 	hunt.toggle_aim()
+	GameState.weapon_idx = 0
 	print("SMOKE hunt OK")
 	var cn = player.char_node
 	if cn == null or not cn.has_method("is_skinned_ok") or not cn.is_skinned_ok():
@@ -206,6 +215,8 @@ func _start(is_new: bool) -> void:
 	add_child(hunt)
 	hunt.message.connect(func(t): ui.toast(t, 3.5))
 	hunt.aim_changed.connect(ui.set_aim_mode)
+	hunt.scope_changed.connect(ui.set_scope_mode)
+	player.footstep.connect(func(): sfx.step(player.crouch))
 	hunt.sound.connect(func(n): sfx.play(n, -2.0))
 	barn = BarnS.new()
 	barn.world = world
@@ -292,6 +303,7 @@ func _on_action(a: String) -> void:
 				ui.toast(why, 2.5)
 		"aim": hunt.toggle_aim()
 		"fire": hunt.fire()
+		"scope": hunt.toggle_scope()
 		"weapon": hunt.cycle_weapon()
 		"speed": hunt.speedup()
 		"gentle":
@@ -457,7 +469,6 @@ func _process(d: float) -> void:
 	sfx.update(d, GameState.time_of_day, playing)
 	if not playing:
 		return
-	sfx.footsteps(d, Vector2(player.velocity.x, player.velocity.z).length(), player.is_on_floor(), player.crouch)
 	_cluck_t -= d
 	if _cluck_t <= 0.0:
 		_cluck_t = randf_range(5.0, 12.0)

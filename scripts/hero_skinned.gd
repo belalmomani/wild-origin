@@ -15,6 +15,124 @@ var socket_l: Node3D
 var tool_axe: Node3D
 var tool_pick: Node3D
 var tool_hammer: Node3D
+var w_sling: Node3D
+var w_bow: Node3D
+var w_xbow: Node3D
+var sling_a: MeshInstance3D
+var sling_b: MeshInstance3D
+var pouch: MeshInstance3D
+var bow_s1: MeshInstance3D
+var bow_s2: MeshInstance3D
+var arrow: MeshInstance3D
+var xbow_scope: Node3D
+
+## cylinder of unit height; _place() stretches it between two points (rubber bands, bow strings, arrows)
+func _link(parent: Node3D, mat: Material, r: float) -> MeshInstance3D:
+	var c := CylinderMesh.new()
+	c.top_radius = r
+	c.bottom_radius = r
+	c.height = 1.0
+	c.radial_segments = 6
+	var mi := MeshInstance3D.new()
+	mi.mesh = c
+	mi.material_override = mat
+	parent.add_child(mi)
+	return mi
+
+func _place(mi: MeshInstance3D, a: Vector3, b: Vector3) -> void:
+	var dv := b - a
+	var ln := dv.length()
+	if ln < 0.001:
+		mi.visible = false
+		return
+	mi.visible = true
+	var y := dv / ln
+	var ref := Vector3.FORWARD if absf(y.dot(Vector3.UP)) > 0.9 else Vector3.UP
+	var x := ref.cross(y).normalized()
+	var z := x.cross(y)
+	mi.transform = Transform3D(Basis(x, y * ln, z), (a + b) * 0.5)
+
+func _build_weapons() -> void:
+	# authored in the hand's frame: the aiming direction is -Y, "up" is -Z (arm raised forward)
+	var wood := M.pbr("bark", Color(0.9, 0.8, 0.65), 1.5, 0.9)
+	var dark := M.flat(Color(0.12, 0.1, 0.08), 0.7)
+	var metal := M.flat(Color(0.62, 0.64, 0.68), 0.35)
+	var rubber := M.flat(Color(0.55, 0.15, 0.1), 0.8)
+	var cord := M.flat(Color(0.85, 0.8, 0.65), 0.9)
+	# slingshot (right hand)
+	w_sling = Node3D.new()
+	socket_r.add_child(w_sling)
+	_cyl(w_sling, 0.018, 0.14, wood, Vector3(0, -0.07, 0))
+	for sx in [-1.0, 1.0]:
+		_place(_link(w_sling, wood, 0.013), Vector3(0, -0.14, 0), Vector3(sx * 0.045, -0.21, -0.08))
+	sling_a = _link(w_sling, rubber, 0.006)
+	sling_b = _link(w_sling, rubber, 0.006)
+	pouch = _sph(w_sling, 0.02, dark, Vector3(0, -0.17, -0.02))
+	# bow (left hand): limbs along Z, belly toward the archer (+Y)
+	w_bow = Node3D.new()
+	socket_l.add_child(w_bow)
+	var pts: Array = []
+	for i in 9:
+		var s := -0.55 + 1.1 * i / 8.0
+		pts.append(Vector3(0, 0.13 * pow(s / 0.55, 2.0), s))
+	for i in 8:
+		_place(_link(w_bow, wood, 0.016 - 0.006 * absf(float(i) - 3.5) / 3.5), pts[i], pts[i + 1])
+	_box(w_bow, Vector3(0.035, 0.045, 0.12), dark, Vector3.ZERO)
+	bow_s1 = _link(w_bow, cord, 0.004)
+	bow_s2 = _link(w_bow, cord, 0.004)
+	arrow = _link(w_bow, wood, 0.004)
+	# crossbow (right hand): stock + curved prod + string + bolt + optional scope
+	w_xbow = Node3D.new()
+	socket_r.add_child(w_xbow)
+	_box(w_xbow, Vector3(0.05, 0.72, 0.07), wood, Vector3(0, -0.2, 0))
+	var prod: Array = []
+	for i in 9:
+		var s2 := -0.34 + 0.68 * i / 8.0
+		prod.append(Vector3(s2, -0.52 + 0.09 * pow(s2 / 0.34, 2.0), 0))
+	for i in 8:
+		_place(_link(w_xbow, dark, 0.014), prod[i], prod[i + 1])
+	_place(_link(w_xbow, cord, 0.004), prod[0], Vector3(0, -0.2, 0))
+	_place(_link(w_xbow, cord, 0.004), Vector3(0, -0.2, 0), prod[8])
+	_place(_link(w_xbow, metal, 0.006), Vector3(0, -0.2, -0.045), Vector3(0, -0.6, -0.045))
+	xbow_scope = Node3D.new()
+	w_xbow.add_child(xbow_scope)
+	_cyl(xbow_scope, 0.022, 0.24, dark, Vector3(0, -0.2, -0.09))
+	_cyl(xbow_scope, 0.027, 0.03, metal, Vector3(0, -0.31, -0.09))
+	_cyl(xbow_scope, 0.027, 0.03, metal, Vector3(0, -0.09, -0.09))
+	xbow_scope.visible = false
+
+func set_scoped(on: bool) -> void:
+	if xbow_scope:
+		xbow_scope.visible = on
+
+func _update_weapons(aiming: bool, carrying: bool, action: String, k: float) -> void:
+	var held := not carrying and action != "chop" and action != "gather" and action != "build"
+	w_sling.visible = held and weapon == "slingshot"
+	w_bow.visible = held and weapon == "bow"
+	w_xbow.visible = held and weapon == "crossbow"
+	# carried low vs raised to aim
+	w_sling.rotation.x = lerpf(w_sling.rotation.x, 0.0 if aiming else PI, k)
+	w_bow.rotation.x = lerpf(w_bow.rotation.x, 0.0 if aiming else PI / 2.0, k)
+	w_xbow.rotation.x = lerpf(w_xbow.rotation.x, 0.0 if aiming else 0.5, k)
+	if w_sling.visible:
+		var p := Vector3(0, -0.17, -0.02)
+		if aiming:
+			p = w_sling.to_local(socket_l.global_position)     # the band follows the pulling hand
+		_place(sling_a, Vector3(-0.045, -0.21, -0.08), p)
+		_place(sling_b, Vector3(0.045, -0.21, -0.08), p)
+		pouch.position = p
+	if w_bow.visible:
+		var tt := Vector3(0, 0.13, -0.55)
+		var tb := Vector3(0, 0.13, 0.55)
+		if aiming:
+			var dp := w_bow.to_local(socket_r.global_position)  # string is drawn to the right hand
+			_place(bow_s1, tt, dp)
+			_place(bow_s2, dp, tb)
+			_place(arrow, dp, dp + Vector3(0, -0.75, 0))
+		else:
+			_place(bow_s1, tt, tb)
+			bow_s2.visible = false
+			arrow.visible = false
 
 func is_skinned_ok() -> bool:
 	return skel != null and idx.size() == BONES.size()
@@ -82,6 +200,7 @@ func _ready() -> void:
 	socket_r.add_child(tool_hammer)
 	_cyl(tool_hammer, 0.018, 0.5, wood, Vector3(0, -0.12, 0))
 	_box(tool_hammer, Vector3(0.07, 0.07, 0.15), metal, Vector3(0, -0.4, 0))
+	_build_weapons()
 	axe = tool_axe
 	tool_pick.visible = false
 	tool_hammer.visible = false
@@ -101,9 +220,8 @@ func animate(d: float, spd: float, on_floor: bool, vy: float, crouch: bool, acti
 		skel.set_bone_pose_rotation(idx[b], Basis.from_euler(Vector3(-r.x, r.y, -r.z)).get_rotation_quaternion())
 	var dy := ((J["hips"] as Node3D).position.y - 0.95) * 1.25
 	skel.set_bone_pose_position(idx["hips"], Vector3(0, maxf(0.42, rest_hips_y + dy), 0))
-	var show_pick := action == "gather"
-	var show_hammer := action == "build"
-	var show_axe := not carrying and not show_pick and not show_hammer
-	tool_axe.visible = show_axe or action == "chop"
-	tool_pick.visible = show_pick
-	tool_hammer.visible = show_hammer
+	# what is in the hand: work tool during chop / gather / build, otherwise the SELECTED WEAPON
+	tool_axe.visible = action == "chop"
+	tool_pick.visible = action == "gather"
+	tool_hammer.visible = action == "build"
+	_update_weapons(action == "aim", carrying, action, clampf(d * 10.0, 0.0, 1.0))

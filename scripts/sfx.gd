@@ -71,7 +71,12 @@ func play_at(pos: Vector3) -> void:
 		cluck.pitch_scale = randf_range(0.9, 1.15)
 		cluck.play()
 
-## Footsteps from movement speed (call every frame while playing).
+## One footstep, called by the walk cycle at each heel strike (synchronised with the legs).
+func step(crouching: bool) -> void:
+	_step_i += 1
+	play("step1" if _step_i % 2 == 0 else "step2", -14.0 if crouching else -9.0, randf_range(0.9, 1.1))
+
+## (unused) timer-based footsteps; kept for reference
 func footsteps(d: float, speed: float, on_floor: bool, crouching: bool) -> void:
 	if not on_floor or speed < 0.6:
 		_step_t = 0.0
