@@ -21,6 +21,8 @@ var aiming := false
 var scoped := false
 var scope_fov := 20.0
 var sway_t := 0.0
+var prev_yaw := 0.0
+var turn_s := 0.0
 var body: Node3D
 var arm: SpringArm3D
 var cam: Camera3D
@@ -86,6 +88,10 @@ func _hero_anim(spd: float) -> void:
 		hero_anim.get_animation(want).loop_mode = Animation.LOOP_LINEAR
 		hero_anim.play(want, 0.2)
 	hero_anim.speed_scale = 1.0 if (moving or want == a_idle) else 0.0
+
+func emote(emo: String, secs: float = 1.8) -> void:
+	if char_node != null and char_node.has_method("emote"):
+		char_node.emote(emo, secs)
 
 func set_aim(on: bool) -> void:
 	aiming = on
@@ -195,13 +201,16 @@ func _physics_process(d: float) -> void:
 		body.rotation.y = lerp_angle(body.rotation.y, cam_yaw, 10.0 * d)
 	elif speed > 0.2:
 		body.rotation.y = lerp_angle(body.rotation.y, atan2(-dir.x, -dir.z), 10.0 * d)
+	var dyaw := wrapf(body.rotation.y - prev_yaw, -PI, PI)
+	prev_yaw = body.rotation.y
+	turn_s = lerpf(turn_s, dyaw / maxf(d, 0.0001), clampf(12.0 * d, 0.0, 1.0))
 	move_and_slide()
 	var spd := Vector2(velocity.x, velocity.z).length()
 	if hero:
 		_hero_anim(spd)
 	elif char_node:
 		char_node.set_weapon(GameState.weapons[GameState.weapon_idx])
-		char_node.animate(d, spd, is_on_floor(), velocity.y, crouch, action if action != "" else ("aim" if aiming else ""), carry_t > 0.0)
+		char_node.animate(d, spd, is_on_floor(), velocity.y, crouch, action if action != "" else ("aim" if aiming else ""), carry_t > 0.0, turn_s)
 		char_node.set_carrying(carry_t > 0.0)
 	position.x = clampf(position.x, -96.0, 96.0)
 	position.z = clampf(position.z, -96.0, 96.0)

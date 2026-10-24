@@ -4,9 +4,9 @@ import numpy as np
 from PIL import Image
 import hero_model as H
 
-PAL = {"skin": (.82, .60, .46), "shirt": (.34, .42, .26), "pants": (.30, .24, .17), "leather": (.42, .26, .13), "leather_dark": (.10, .09, .08),
-       "rubber": (.07, .06, .05), "pack": (.42, .37, .24), "scarf": (.66, .52, .36), "bedroll": (.45, .40, .30), "hair": (.30, .20, .13),
-       "eye": (.95, .95, .95), "metal": (.65, .66, .70)}
+PAL = {"skin": (.82, .60, .46), "shirt": (.26, .36, .20), "pants": (.36, .30, .23), "leather": (.42, .26, .13), "leather_dark": (.10, .09, .08),
+       "rubber": (.07, .06, .05), "pack": (.38, .32, .19), "scarf": (.66, .52, .36), "bedroll": (.45, .40, .30), "hair": (.30, .20, .13),
+       "eye": (.95, .95, .95), "metal": (.65, .66, .70), "emblem": (.78, .42, .16), "copper": (.70, .34, .12), "thread": (.62, .50, .28), "midsole": (.55, .50, .42), "beard": (.30, .20, .13)}
 
 def render(parts, yaw_deg, W=560, Hh=820, crop=(0.0, 1.86), zoom=None, center_x=0.0):
     y0, y1 = crop; scale = Hh / (y1 - y0) * .96
@@ -18,6 +18,8 @@ def render(parts, yaw_deg, W=560, Hh=820, crop=(0.0, 1.86), zoom=None, center_x=
         X = P[:, 0] * c + P[:, 2] * s; Z = -P[:, 0] * s + P[:, 2] * c     # rotate about Y
         NX = N[:, 0] * c + N[:, 2] * s; NZ = -N[:, 0] * s + N[:, 2] * c
         base = np.array(PAL[p["mat"]]); col = np.clip(base[None] * p["C"][:, :3], 0, 1)
+        if p["mat"] == "beard":      # emulate the alpha-blended beard edge
+            a = p["C"][:, 3:4]; col = np.array(PAL["skin"])[None] * (1 - a) + col * a
         lam = np.clip(NX * L[0] + N[:, 1] * L[1] + NZ * L[2], 0, 1) * .85 + .25
         shade = np.clip(col * lam[:, None], 0, 1) ** (1 / 2.2)
         sx = W / 2 + (X - center_x) * scale; sy = Hh - (P[:, 1] - y0) * scale - 20

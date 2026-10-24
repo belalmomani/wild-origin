@@ -12,6 +12,10 @@ signal footstep
 var weapon := "slingshot"
 var walk_w := 0.0
 var prev_cs := 1.0
+var was_air := false
+var air_vy := 0.0
+var land_t := 0.0
+var land_amp := 0.0
 var phase := 0.0
 var t := 0.0
 var action_t := 0.0
@@ -187,8 +191,11 @@ func set_weapon(id: String) -> void:
 func set_scoped(_on: bool) -> void:
 	pass
 
-func animate(d: float, spd: float, on_floor: bool, vy: float, crouch: bool, action: String, carrying: bool) -> void:
+## turn = body yaw rate (rad/s): leans into turns and steps the feet when turning on the spot.
+func animate(d: float, spd: float, on_floor: bool, vy: float, crouch: bool, action: String, carrying: bool, turn: float = 0.0) -> void:
 	t += d
+	if on_floor and spd < 0.5 and absf(turn) > 1.0 and action == "":
+		spd = 0.8 * clampf(absf(turn) / 3.0, 0.3, 1.0)       # pivot with small steps instead of sliding
 	if action != last_action:
 		action_t = 0.0
 		last_action = action
@@ -210,8 +217,11 @@ func animate(d: float, spd: float, on_floor: bool, vy: float, crouch: bool, acti
 		"shL": Vector3.ZERO, "shR": Vector3.ZERO, "elL": Vector3.ZERO, "elR": Vector3.ZERO,
 		"hipL": Vector3.ZERO, "hipR": Vector3.ZERO, "knL": Vector3.ZERO, "knR": Vector3.ZERO}
 	# --- locomotion: idle pose blended with a biomechanical gait (arms opposite legs, pelvis twist, knee flexion) ---
-	var idle := {"spine": Vector3(sin(t * 1.6) * 0.012, 0, 0), "head": Vector3(sin(t * 0.7) * 0.03, sin(t * 0.45) * 0.1, 0),
-		"shL": Vector3(0.03, 0, 0.09), "shR": Vector3(0.03, 0, -0.09), "elL": Vector3(0.18, 0, 0), "elR": Vector3(0.18, 0, 0)}
+	var shift := sin(t * 0.45)                                   # slow weight shift between the legs
+	var idle := {"spine": Vector3(sin(t * 1.6) * 0.012, 0, shift * 0.02), "head": Vector3(sin(t * 0.7) * 0.03, sin(t * 0.45) * 0.1, -shift * 0.02),
+		"hips": Vector3(0, 0, shift * 0.025), "knL": Vector3(-0.05 * maxf(0.0, shift), 0, 0), "knR": Vector3(-0.05 * maxf(0.0, -shift), 0, 0),
+		"shL": Vector3(0.03, 0, 0.09 + sin(t * 1.6) * 0.012), "shR": Vector3(0.03, 0, -0.09 - sin(t * 1.6) * 0.012),
+		"elL": Vector3(0.18, 0, 0), "elR": Vector3(0.18, 0, 0)}
 	var A := lerpf(0.28, 0.42, clampf(spd / 2.2, 0.0, 1.0)) + 0.33 * t_run      # hip swing
 	var K := 0.9 + 0.6 * t_run                                                 # swing-phase knee flexion
 	var arm := 0.30 + 0.35 * t_run
@@ -231,26 +241,37 @@ func animate(d: float, spd: float, on_floor: bool, vy: float, crouch: bool, acti
 		if not walk.has(key):
 			tg[key] = idle[key]
 	hip_y = lerpf(0.95 + sin(t * 1.6) * 0.004, 0.95 - (0.02 + 0.035 * t_run) * (1.0 - absf(cs)), walk_w)
-	# --- airborne ---
+	# --- jump: push-off -> flight -> landing, blended by vertical speed (no pops between poses) ---
 	if not on_floor:
-		if vy > 0.5:
-			tg["hipL"] = Vector3(0.7, 0, 0)
-			tg["hipR"] = Vector3(-0.2, 0, 0)
-			tg["knL"] = Vector3(-1.1, 0, 0)
-			tg["knR"] = Vector3(-0.5, 0, 0)
-			tg["shL"] = Vector3(2.2, 0, 0.3)
-			tg["shR"] = Vector3(2.2, 0, -0.3)
-			tg["elL"] = Vector3(0.3, 0, 0)
-			tg["elR"] = Vector3(0.3, 0, 0)
-			tg["spine"] = Vector3(-0.12, 0, 0)
-		else:
-			tg["hipL"] = Vector3(0.35, 0, 0)
-			tg["hipR"] = Vector3(-0.25, 0, 0)
-			tg["knL"] = Vector3(-0.7, 0, 0)
-			tg["knR"] = Vector3(-0.4, 0, 0)
-			tg["shL"] = Vector3(1.0, 0, 0.55)
-			tg["shR"] = Vector3(1.0, 0, -0.55)
-			tg["spine"] = Vector3(-0.05, 0, 0)
+		was_air = true
+		air_vy = minf(air_vy, vy)
+		var up := clampf(vy / 5.0, 0.0, 1.0)
+		tg["hipL"] = Vector3(0.35, 0, 0).lerp(Vector3(0.7, 0, 0), up)
+		tg["hipR"] = Vector3(-0.25, 0, 0).lerp(Vector3(-0.2, 0, 0), up)
+		tg["knL"] = Vector3(-0.7, 0, 0).lerp(Vector3(-1.1, 0, 0), up)
+		tg["knR"] = Vector3(-0.4, 0, 0).lerp(Vector3(-0.5, 0, 0), up)
+		tg["shL"] = Vector3(1.0, 0, 0.55).lerp(Vector3(2.2, 0, 0.3), up)
+		tg["shR"] = Vector3(1.0, 0, -0.55).lerp(Vector3(2.2, 0, -0.3), up)
+		tg["elL"] = Vector3(0.25, 0, 0)
+		tg["elR"] = Vector3(0.25, 0, 0)
+		tg["spine"] = Vector3(-0.05, 0, 0).lerp(Vector3(-0.12, 0, 0), up)
+	elif was_air:
+		was_air = false
+		land_amp = clampf(-air_vy / 9.0, 0.25, 1.0)
+		land_t = 1.0
+		air_vy = 0.0
+		footstep.emit()                          # landing thud
+	land_t = maxf(0.0, land_t - d * 3.0)
+	if land_t > 0.0 and on_floor and action == "":
+		var lw := land_t * land_amp               # absorb the impact: knees and hips bend, torso leans, arms balance
+		tg["hipL"] = (tg["hipL"] as Vector3) + Vector3(0.55 * lw, 0, 0)
+		tg["hipR"] = (tg["hipR"] as Vector3) + Vector3(0.55 * lw, 0, 0)
+		tg["knL"] = (tg["knL"] as Vector3) + Vector3(-1.0 * lw, 0, 0)
+		tg["knR"] = (tg["knR"] as Vector3) + Vector3(-1.0 * lw, 0, 0)
+		tg["spine"] = (tg["spine"] as Vector3) + Vector3(-0.2 * lw, 0, 0)
+		tg["shL"] = (tg["shL"] as Vector3) + Vector3(0.4 * lw, 0, 0.1 * lw)
+		tg["shR"] = (tg["shR"] as Vector3) + Vector3(0.4 * lw, 0, -0.1 * lw)
+		hip_y -= 0.10 * lw
 	# --- crouch ---
 	if crouch and on_floor:
 		hip_y = 0.62
@@ -338,6 +359,11 @@ func animate(d: float, spd: float, on_floor: bool, vy: float, crouch: bool, acti
 			tg["shR"] = Vector3(1.25 - pat, 0, -0.15)
 			tg["elL"] = Vector3(0.7, 0, 0)
 			tg["elR"] = Vector3(0.7, 0, 0)
+	if action == "" and on_floor:
+		var lean := clampf(turn * 0.035, -0.12, 0.12)      # bank into the turn
+		tg["spine"] = (tg["spine"] as Vector3) + Vector3(0, 0, lean)
+		tg["hips"] = (tg["hips"] as Vector3) + Vector3(0, 0, -lean * 0.5)
+		tg["head"] = (tg["head"] as Vector3) + Vector3(0, clampf(turn * 0.03, -0.15, 0.15), 0)
 	for jn in tg:
 		_rot(jn, tg[jn], k)
 	var hp: Node3D = J["hips"]

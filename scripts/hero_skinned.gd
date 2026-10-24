@@ -25,6 +25,17 @@ var bow_s1: MeshInstance3D
 var bow_s2: MeshInstance3D
 var arrow: MeshInstance3D
 var xbow_scope: Node3D
+const EXPR := ["smile", "surprise", "focus", "fear", "tired"]
+var pack_i := -1
+var pack_x := 0.0
+var pack_v := 0.0
+var prev_vy := 0.0
+var head_mi: MeshInstance3D
+var blend_idx := {}
+var expr_cur := {}
+var emote_name := ""
+var emote_t := 0.0
+var run_t := 0.0
 
 ## cylinder of unit height; _place() stretches it between two points (rubber bands, bow strings, arrows)
 func _link(parent: Node3D, mat: Material, r: float) -> MeshInstance3D:
@@ -137,6 +148,10 @@ func _update_weapons(aiming: bool, carrying: bool, action: String, k: float) -> 
 func is_skinned_ok() -> bool:
 	return skel != null and idx.size() == BONES.size()
 
+## True when the 5 facial expression blend shapes were imported from the Head mesh.
+func face_ready() -> bool:
+	return head_mi != null and blend_idx.size() == EXPR.size()
+
 func _attach(bone: String) -> Node3D:
 	var att := BoneAttachment3D.new()
 	att.name = "Attach_" + bone
@@ -169,8 +184,20 @@ func _ready() -> void:
 		_joint(self, b, Vector3.ZERO)          # driver joints (flat) used by character.gd's animate()
 	(J["hips"] as Node3D).position = Vector3(0, 0.95, 0)
 	rest_hips_y = skel.get_bone_rest(idx["hips"]).origin.y
+	pack_i = skel.find_bone("pack")           # optional backpack bone (secondary motion)
 	for mi in model.find_children("*", "MeshInstance3D", true, false):
 		var m := mi as MeshInstance3D
+		if m.name == "HeroDetail":              # stitching, zips, buckles, laces, emblems: cheap LOD
+			m.visibility_range_end = 14.0
+			m.visibility_range_end_margin = 3.0
+			m.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
+			m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		elif m.name == "Head":
+			head_mi = m
+			for en in EXPR:
+				var bi := m.find_blend_shape_by_name(en)
+				if bi >= 0:
+					blend_idx[en] = bi
 		for i in m.mesh.get_surface_count():
 			var src := m.get_active_material(i)
 			if src is StandardMaterial3D:
@@ -210,10 +237,51 @@ func _ready() -> void:
 	stone.visible = false
 	_mi(stone, G.rock(77, 1), M.pbr("rock", Color.WHITE, 0.5), Vector3.ZERO, Vector3.ZERO, Vector3.ONE * 0.2)
 
-func animate(d: float, spd: float, on_floor: bool, vy: float, crouch: bool, action: String, carrying: bool) -> void:
+## Facial expression for a moment (smile, surprise, focus, fear, tired). Automatic ones: focus while aiming,
+## surprise while falling fast, tired after a long run.
+func emote(emo: String, secs: float = 1.8) -> void:
+	emote_name = emo
+	emote_t = secs
+
+func _update_face(d: float, spd: float, on_floor: bool, vy: float, action: String) -> void:
+	if head_mi == null:
+		return
+	run_t = run_t + d if spd > 4.5 else maxf(0.0, run_t - d * 2.0)
+	var want := ""
+	if emote_t > 0.0:
+		emote_t -= d
+		want = emote_name
+	elif action == "aim":
+		want = "focus"
+	elif not on_floor and vy < -4.0:
+		want = "surprise"
+	elif run_t > 18.0:
+		want = "tired"
+	for en in EXPR:
+		var tgt := (1.0 if en == "smile" else 0.85) if en == want else 0.0
+		expr_cur[en] = lerpf(float(expr_cur.get(en, 0.0)), tgt, clampf(d * 6.0, 0.0, 1.0))
+		if blend_idx.has(en):
+			head_mi.set_blend_shape_value(int(blend_idx[en]), float(expr_cur[en]))
+
+## Tiny spring on the 'pack' bone: the backpack lags behind jumps/landings, bounces with steps, sways in turns.
+func _update_pack(d: float, on_floor: bool, vy: float, turn: float) -> void:
+	if pack_i < 0:
+		return
+	var acc := vy - prev_vy
+	if not on_floor:
+		acc += 18.0 * d                          # ignore plain gravity in free fall
+	prev_vy = vy
+	pack_v += clampf(-acc * 0.6, -0.5, 0.5)
+	pack_v += (-pack_x * 90.0 - pack_v * 11.0) * d
+	pack_x = clampf(pack_x + pack_v * d, -0.05, 0.05)
+	var bounce := sin(phase * 2.0) * 0.015 * walk_w
+	var q := Quaternion(Vector3.RIGHT, pack_x + bounce) * Quaternion(Vector3.UP, clampf(-turn * 0.008, -0.03, 0.03))
+	skel.set_bone_pose_rotation(pack_i, q)
+
+func animate(d: float, spd: float, on_floor: bool, vy: float, crouch: bool, action: String, carrying: bool, turn: float = 0.0) -> void:
 	if skel == null:
 		return
-	super.animate(d, spd, on_floor, vy, crouch, action, carrying)
+	super.animate(d, spd, on_floor, vy, crouch, action, carrying, turn)
 	# char-frame (front -Z) rotations -> model-frame (front +Z): conjugation by a 180 deg yaw flips X and Z
 	for b in BONES:
 		var r: Vector3 = (J[b] as Node3D).rotation
@@ -225,3 +293,5 @@ func animate(d: float, spd: float, on_floor: bool, vy: float, crouch: bool, acti
 	tool_pick.visible = action == "gather"
 	tool_hammer.visible = action == "build"
 	_update_weapons(action == "aim", carrying, action, clampf(d * 10.0, 0.0, 1.0))
+	_update_pack(d, on_floor, vy, turn)
+	_update_face(d, spd, on_floor, vy, action)

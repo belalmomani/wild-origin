@@ -132,8 +132,8 @@ func _ready() -> void:
 	(J["chest"] as Node3D).add_child(stone)
 	_mi(stone, G.rock(77, 1), M.pbr("rock", Color.WHITE, 0.5), Vector3.ZERO, Vector3.ZERO, Vector3.ONE * 0.2)
 
-func animate(d: float, spd: float, on_floor: bool, vy: float, crouch: bool, action: String, carrying: bool) -> void:
-	super.animate(d, spd, on_floor, vy, crouch, action, carrying)
+func animate(d: float, spd: float, on_floor: bool, vy: float, crouch: bool, action: String, carrying: bool, turn: float = 0.0) -> void:
+	super.animate(d, spd, on_floor, vy, crouch, action, carrying, turn)
 	# this model's legs are shorter than the procedural body's: exaggerate hip drop so feet stay on the ground
 	var hp: Node3D = J["hips"]
 	hp.position.y = maxf(0.45, 0.95 + (hp.position.y - 0.95) * 1.3)

@@ -103,6 +103,14 @@ func _smoke() -> void:
 		get_tree().quit(1)
 		return
 	print("SMOKE hero OK")
+	if not cn.has_method("face_ready") or not cn.face_ready() or cn.pack_i < 0:
+		print("SMOKE FAIL: hero face morph targets or pack bone missing")
+		get_tree().quit(1)
+		return
+	for emo in ["smile", "surprise", "focus", "fear", "tired"]:
+		player.emote(emo, 0.3)
+		await get_tree().create_timer(0.35).timeout
+	print("SMOKE face OK")
 	GameState.barn_unlocked = true
 	GameState.add("wood", 600)
 	for bi in builder.boards.size():
@@ -297,6 +305,7 @@ func _on_action(a: String) -> void:
 			var why := GameState.research(tid)
 			if why == "":
 				sfx.play("chime", -4.0)
+				player.emote("smile", 2.0)
 				ui.toast("تم التطوير: %s ✓" % preload("res://scripts/tech_logic.gd").by_id(tid)["name"], 3.0)
 				_apply_techs()
 			else:
@@ -354,6 +363,7 @@ func _on_drop(pi: int) -> void:
 		ui.puzzle.refresh()
 		if builder.remaining(bi) == 0:
 			ui.toast("اكتملت: %s ✓" % builder.boards[bi].name, 3.0)
+			player.emote("smile", 2.5)
 			await get_tree().create_timer(0.8).timeout
 			ui.close_puzzle()
 			player.play_action("build", 1.6)
