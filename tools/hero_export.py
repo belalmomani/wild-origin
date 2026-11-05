@@ -60,16 +60,16 @@ def make_textures():
 
 # material -> (texture key or None, linear base colour, roughness, metallic)
 MATS = {
-    "skin": ("skin", (.82, .60, .46), .55, 0.0), "shirt": ("fabric", (.26, .36, .20), .92, 0.0),
-    "pants": ("fabric", (.36, .30, .23), .92, 0.0), "leather": ("leather", (.42, .26, .13), .6, 0.0),
-    "leather_dark": (None, (.11, .10, .09), .75, 0.0), "rubber": (None, (.06, .055, .05), .95, 0.0),
-    "pack": ("fabric", (.38, .32, .19), .93, 0.0), "bedroll": ("fabric", (.46, .40, .30), .95, 0.0),
-    "hair": ("hair", (.50, .35, .24), .55, 0.0), "beard": ("hair", (.46, .32, .22), .6, 0.0),
+    "skin": ("skin", (.58, .42, .28), .55, 0.0), "shirt": ("fabric", (.085, .15, .09), .92, 0.0), "gray": ("fabric", (.24, .25, .26), .92, 0.0),
+    "pants": ("fabric", (.30, .30, .20), .92, 0.0), "leather": ("leather", (.27, .16, .08), .6, 0.0),
+    "leather_dark": (None, (.06, .055, .05), .7, 0.0), "rubber": (None, (.06, .055, .05), .95, 0.0),
+    "pack": ("fabric", (.055, .055, .06), .85, 0.0), "bedroll": ("fabric", (.46, .40, .30), .95, 0.0),
+    "hair": ("hair", (.075, .058, .047), .55, 0.0), "beard": ("hair", (.07, .052, .042), .6, 0.0),
     "eye": (None, (.95, .95, .95), .10, 0.0), "metal": (None, (.62, .63, .66), .38, 0.85),
     "emblem": ("emblem", (1, 1, 1), .5, 0.35), "copper": ("fabric", (.70, .34, .12), .9, 0.0),
     "thread": (None, (.60, .48, .27), .9, 0.0), "midsole": (None, (.50, .45, .37), .85, 0.0),
 }
-BLEND = {"beard"}
+MASK = {"hair", "beard"}
 
 def pad4(b, fill=b"\x00"):
     return b + fill * ((4 - len(b) % 4) % 4)
@@ -100,7 +100,7 @@ def build():
         key, col, rough, metal = MATS[m]
         pbr = {"baseColorFactor": [*[min(1.0, c / tex[key][2]) if key else c for c in col], 1.0], "roughnessFactor": rough, "metallicFactor": metal}
         mat = {"name": m, "pbrMetallicRoughness": pbr}
-        if m in BLEND: mat["alphaMode"] = "BLEND"
+        if m in MASK: mat["alphaMode"] = "MASK"; mat["alphaCutoff"] = 0.5
         if key:
             pbr["baseColorTexture"] = {"index": tex_idx(key, False)}
             if tex[key][1] is not None: mat["normalTexture"] = {"index": tex_idx(key, True), "scale": 0.8}

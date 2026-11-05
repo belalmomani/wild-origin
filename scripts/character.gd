@@ -219,7 +219,7 @@ func animate(d: float, spd: float, on_floor: bool, vy: float, crouch: bool, acti
 	# --- locomotion: idle pose blended with a biomechanical gait (arms opposite legs, pelvis twist, knee flexion) ---
 	var shift := sin(t * 0.45)                                   # slow weight shift between the legs
 	var idle := {"spine": Vector3(sin(t * 1.6) * 0.012, 0, shift * 0.02), "head": Vector3(sin(t * 0.7) * 0.03, sin(t * 0.45) * 0.1, -shift * 0.02),
-		"hips": Vector3(0, 0, shift * 0.025), "knL": Vector3(-0.05 * maxf(0.0, shift), 0, 0), "knR": Vector3(-0.05 * maxf(0.0, -shift), 0, 0),
+		"hips": Vector3(0, 0, shift * 0.025), "hipL": Vector3(0, 0, -0.045), "hipR": Vector3(0, 0, 0.045), "knL": Vector3(-0.05 * maxf(0.0, shift), 0, 0), "knR": Vector3(-0.05 * maxf(0.0, -shift), 0, 0),
 		"shL": Vector3(0.03, 0, 0.09 + sin(t * 1.6) * 0.012), "shR": Vector3(0.03, 0, -0.09 - sin(t * 1.6) * 0.012),
 		"elL": Vector3(0.18, 0, 0), "elR": Vector3(0.18, 0, 0)}
 	var A := lerpf(0.28, 0.42, clampf(spd / 2.2, 0.0, 1.0)) + 0.33 * t_run      # hip swing
