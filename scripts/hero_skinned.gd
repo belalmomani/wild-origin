@@ -25,6 +25,14 @@ var bow_s1: MeshInstance3D
 var bow_s2: MeshInstance3D
 var arrow: MeshInstance3D
 var xbow_scope: Node3D
+var grip_axe: Node3D
+var grip_pick: Node3D
+var grip_hammer: Node3D
+var grip_xbow: Node3D
+var grip_stone_l: Node3D
+var grip_stone_r: Node3D
+var ik_wl := 0.0
+var ik_wr := 0.0
 const EXPR := ["smile", "surprise", "focus", "fear", "tired"]
 var pack_i := -1
 var pack_x := 0.0
@@ -145,6 +153,81 @@ func _update_weapons(aiming: bool, carrying: bool, action: String, k: float) -> 
 			bow_s2.visible = false
 			arrow.visible = false
 
+func _grip(parent: Node3D, pos: Vector3) -> Node3D:
+	var g := Node3D.new()
+	g.position = pos
+	parent.add_child(g)
+	return g
+
+## Two-bone arm solver: elbow E and wrist W (skeleton space) so that the wrist reaches t.
+func _solve_elbow(s: Vector3, t: Vector3, l1: float, l2: float, pole: Vector3) -> Array:
+	var d := t - s
+	var dist := clampf(d.length(), absf(l1 - l2) * 1.001 + 0.001, (l1 + l2) * 0.999)
+	var u := d.normalized()
+	var w := s + u * dist
+	var a := (l1 * l1 - l2 * l2 + dist * dist) / (2.0 * dist)
+	var h := sqrt(maxf(0.0, l1 * l1 - a * a))
+	var p := pole - u * pole.dot(u)
+	p = Vector3.DOWN if p.length() < 0.000001 else p.normalized()
+	return [s + u * a + p * h, w]
+
+## Make an arm reach target_g (global); blends from the procedural pose by weight w.
+func _ik_arm(side: String, target_g: Vector3, w: float) -> void:
+	var sh_i: int = idx["sh" + side]
+	var el_i: int = idx["el" + side]
+	var hand_i: int = idx["hand" + side]
+	var ch_i: int = idx["chest"]
+	if not target_g.is_finite():
+		return
+	var s := skel.get_bone_global_pose(sh_i).origin
+	var t0 := skel.global_transform.affine_inverse() * target_g
+	var l1 := skel.get_bone_rest(el_i).origin.length()
+	var l2 := skel.get_bone_rest(hand_i).origin.length()
+	var pole := Vector3(0.7 if side == "L" else -0.7, -1.0, -0.4)      # elbow points outward, down, slightly back
+	var res := _solve_elbow(s, t0, l1, l2, pole)
+	for i in 2:                                                         # the wrist sits 7 cm behind the palm centre
+		var f: Vector3 = (t0 - (res[0] as Vector3)).normalized()
+		res = _solve_elbow(s, t0 - f * 0.07, l1, l2, pole)
+	var e: Vector3 = res[0]
+	var wr: Vector3 = res[1]
+	var parent_b := skel.get_bone_global_pose(ch_i).basis
+	var q_sh := Quaternion(Vector3.DOWN, parent_b.inverse() * (e - s).normalized())
+	var sh_b := parent_b * Basis(q_sh)
+	var q_el := Quaternion(Vector3.DOWN, sh_b.inverse() * (wr - e).normalized())
+	skel.set_bone_pose_rotation(sh_i, skel.get_bone_pose_rotation(sh_i).slerp(q_sh, w))
+	skel.set_bone_pose_rotation(el_i, skel.get_bone_pose_rotation(el_i).slerp(q_el, w))
+
+## Two-handed grips: left hand follows the tool handle / crossbow stock; both hands hold a carried stone.
+func _update_ik(d: float, action: String, carrying: bool) -> void:
+	var want_l := 0.0
+	var want_r := 0.0
+	var tl := Vector3.ZERO
+	var tr_ := Vector3.ZERO
+	if action == "chop":
+		tl = grip_axe.global_position
+		want_l = 1.0
+	elif action == "gather":
+		tl = grip_pick.global_position
+		want_l = 1.0
+	elif action == "build":
+		tl = grip_hammer.global_position
+		want_l = 1.0
+	elif action == "aim" and weapon == "crossbow":
+		tl = grip_xbow.global_position
+		want_l = 1.0
+	elif carrying and action == "":
+		tl = grip_stone_l.global_position
+		tr_ = grip_stone_r.global_position
+		want_l = 1.0
+		want_r = 1.0
+	var k := clampf(d * 10.0, 0.0, 1.0)
+	ik_wl = lerpf(ik_wl, want_l, k)
+	ik_wr = lerpf(ik_wr, want_r, k)
+	if ik_wl > 0.01:
+		_ik_arm("L", tl, ik_wl)
+	if ik_wr > 0.01:
+		_ik_arm("R", tr_, ik_wr)
+
 func is_skinned_ok() -> bool:
 	return skel != null and idx.size() == BONES.size()
 
@@ -228,14 +311,20 @@ func _ready() -> void:
 	_cyl(tool_hammer, 0.018, 0.5, wood, Vector3(0, -0.12, 0))
 	_box(tool_hammer, Vector3(0.07, 0.07, 0.15), metal, Vector3(0, -0.4, 0))
 	_build_weapons()
+	grip_axe = _grip(tool_axe, Vector3(0, -0.30, 0))
+	grip_pick = _grip(tool_pick, Vector3(0, -0.34, 0))
+	grip_hammer = _grip(tool_hammer, Vector3(0, -0.24, 0))
+	grip_xbow = _grip(w_xbow, Vector3(0, -0.40, 0.05))
 	axe = tool_axe
 	tool_pick.visible = false
 	tool_hammer.visible = false
 	# carried stone in front of the chest
 	stone = _attach("chest")
-	stone.position = Vector3(0, -0.1, -0.27)
+	stone.position = Vector3(0, -0.1, 0.27)      # in front of the chest (model front is +Z in the bone frame)
 	stone.visible = false
 	_mi(stone, G.rock(77, 1), M.pbr("rock", Color.WHITE, 0.5), Vector3.ZERO, Vector3.ZERO, Vector3.ONE * 0.2)
+	grip_stone_l = _grip(stone, Vector3(-0.2, 0, 0))     # the stone node is yawed PI: local -X is the model's left (+X)
+	grip_stone_r = _grip(stone, Vector3(0.2, 0, 0))
 
 ## Facial expression for a moment (smile, surprise, focus, fear, tired). Automatic ones: focus while aiming,
 ## surprise while falling fast, tired after a long run.
@@ -293,5 +382,6 @@ func animate(d: float, spd: float, on_floor: bool, vy: float, crouch: bool, acti
 	tool_pick.visible = action == "gather"
 	tool_hammer.visible = action == "build"
 	_update_weapons(action == "aim", carrying, action, clampf(d * 10.0, 0.0, 1.0))
+	_update_ik(d, action, carrying)
 	_update_pack(d, on_floor, vy, turn)
 	_update_face(d, spd, on_floor, vy, action)

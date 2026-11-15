@@ -445,7 +445,10 @@ def build_head():
         for j in range(3): Ce[:, j] = Ce[:, j] * (1 - pupil) + 0.02 * pupil
         ep["C"] = Ce; PARTS.append(ep)
         eyelids(c, s_)
-    hair_and_beard(); grp("base")
+    bw = hair_and_beard(); grp("base")
+    skin_p = [p for p in PARTS if p["group"] == "head" and p["mat"] == "skin" and len(p["P"]) == len(Pm)][0]
+    soft = np.clip(bw(local, .012) * .9, 0, 1)          # soft stubble shadow on the skin just outside the beard
+    for j, col in enumerate((.34, .27, .23)): skin_p["C"][:, j] = skin_p["C"][:, j] * (1 - .55 * soft) + col * .55 * soft
 
 def eyelids(c, s_):
     """Skin lids over the eyeball leaving an almond-shaped opening; dark lash line along the lid edge."""
@@ -490,7 +493,7 @@ def shell_grid(th0, th1, nth, ph0, ph1, nph, wgt_fn, off_fn, color, mat, seed):
     uvs = np.stack([Pl[:, 0] * 9, Pl[:, 1] * 9], 1)
     new_part(mat, V[used] + HEAD_C, Nn[used], uvs, remap[I], C, w_single(len(used), "head"), morph_deltas(Pl))
 
-def hair_and_beard():
+def hair_and_beard():  # returns the beard weight function
     def hair_w(L):
         x, y, z = L.T; ax = np.abs(x)
         hairline = .040 + .026 * smooth(0, .07, ax) + .008 * np.sin(x * 70)
@@ -504,17 +507,19 @@ def hair_and_beard():
         o = .0085 + .0046 * lock + .004 * smooth(0, .1, y) * (np.sin(np.arctan2(x, z) * 7 + 1.1) * .5 + .5)
         return o + .026 * smooth(.02, .10, y) * (1 - smooth(.035, .075, ax)) + .016 * G(x, y, 0.0, .078, .05, .03) * (z > -.02) - .005 * smooth(.05, .075, ax) + .006 * G(x, y, -.022, .076, .03, .02)
     shell_grid(0.0, math.pi * .62, 40, 0.0, 2 * math.pi, 72, hair_w, hair_off, (.62, .52, .45), "hair", 11)
-    def beard_w(L):
+    def beard_w(L, margin=0.0):
         x, y, z = L.T; ax = np.abs(x)
-        jaw = -.044 + .050 * smooth(.028, .076, ax)
-        w = smooth(jaw + .004, jaw - .004, y) * smooth(-.035, .005, z)
+        jaw = -.044 + .050 * smooth(.028, .076, ax) + margin
+        edge = np.sin(x * 190 + y * 140 + 1.3) * np.sin(z * 160 - y * 110)           # irregular, hair-like edge
+        w = smooth(jaw + .004 + .003 * edge, jaw - .004 + .003 * edge, y) * smooth(-.035, .005, z)
         must = smooth(-.044, -.049, y) * smooth(-.066, -.060, y) * smooth(.044, .036, ax) * smooth(.04, .07, z)
         w = np.maximum(w, must)
         mouth = smooth(.0235, .0195, ax) * smooth(-.0745, -.0715, y) * smooth(-.0615, -.0645, y)
         return np.clip(w * (1 - mouth * .98) * (1 - G(x, y, 0, -.0685, .022, .0040) * .9), 0, 1)
     def beard_off(L):
         x, y, z = L.T; return .0068 + .0022 * np.sin(x * 220 + y * 160) + .003 * smooth(-.06, -.11, y)
-    shell_grid(math.pi * .40, math.pi * .93, 36, -math.pi * .62, math.pi * .62, 56, beard_w, beard_off, (.58, .50, .44), "beard", 12)
+    shell_grid(math.pi * .40, math.pi * .93, 36, -math.pi * .62, math.pi * .62, 56, beard_w, beard_off, (.50, .43, .38), "beard", 12)
+    return beard_w
 
 def assemble():
     PARTS.clear(); grp("base"); build_body(); return PARTS
