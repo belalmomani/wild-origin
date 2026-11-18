@@ -4,7 +4,7 @@ func _init() -> void:
 	var fails := 0
 	var D = load("res://scripts/building_data.gd")
 	var boards: Array = D.make_boards()
-	if boards.size() != 14:
+	if boards.size() != 23:
 		print("FAIL boards: ", boards.size()); fails += 1
 	if boards[2].pieces.size() != 50:
 		print("FAIL back facade should have 50 pieces: ", boards[2].pieces.size()); fails += 1
@@ -24,6 +24,36 @@ func _init() -> void:
 	var rm: ArrayMesh = G.rock(500, 2)
 	if rm.get_surface_count() != 1 or rm.get_faces().size() < 300:
 		print("FAIL rock mesh"); fails += 1
+	# interior (phase 2): every part must lie inside the house shell; F0 keeps its legacy ids; door pieces are flagged
+	var interior := 0
+	var door_pieces := 0
+	for b in boards:
+		if not str(b.id).begins_with("I_"):
+			continue
+		interior += 1
+		if b.pieces.size() < 6:
+			print("FAIL interior board too small ", b.id); fails += 1
+		for p in b.pieces:
+			var o: Vector3 = p.xf.origin
+			if absf(o.x) > 2.1 or o.z > 2.1 or o.z < -1.95 or o.y < 0.0 or o.y > 3.6:
+				print("FAIL interior piece outside the house ", p.id, " ", o); fails += 1
+			if p.get("door", false):
+				door_pieces += 1
+	if interior != 9 or door_pieces < 15:
+		print("FAIL interior boards: ", interior, " door pieces ", door_pieces); fails += 1
+	for b in boards:
+		if str(b.id) == "F0":
+			var has0 := false
+			for p in b.pieces:
+				if p.id == "F0_0":
+					has0 = true
+			if not has0:
+				print("FAIL F0 legacy ids lost"); fails += 1
+			for p in b.pieces:
+				var cx: float = (p.xf.origin as Vector3).x
+				var cy: float = (p.xf.origin as Vector3).y
+				if absf(cx) < 0.55 and cy < 2.3:
+					print("FAIL piece left inside the widened doorway ", p.id); fails += 1
 	print("pieces per board: ", boards.map(func(b): return b.pieces.size()))
 	var F = load("res://scripts/farm_logic.gd")
 	var c = F.new_crop(1, 0.0, 0.0, 0.0)

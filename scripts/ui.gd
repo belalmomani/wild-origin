@@ -39,6 +39,7 @@ var in_tech := false
 var tech
 var tech_btns: Array = []
 var _tween: Tween
+var fade_rect: ColorRect
 
 func _ready() -> void:
 	layer = 10
@@ -86,11 +87,16 @@ func _ready() -> void:
 		bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		bar.visible = false
 		add_child(bar)
+	fade_rect = ColorRect.new()
+	fade_rect.color = Color.BLACK
+	fade_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	fade_rect.visible = false
+	add_child(fade_rect)
 	stick_base = _circle(180, Color(1, 1, 1, 0.18))
 	stick_knob = _circle(80, Color(1, 1, 1, 0.45))
 	for n in [["new", "لعبة جديدة", "menu"], ["continue", "متابعة اللعبة", "menu"], ["quality", "الجودة", "menu"], ["sound", "الصوت", "menu"], ["day", "مدة اليوم", "menu"], ["gentle", "تخفيف المشاهد", "menu"],
 			["jump", "قفز", "hud"], ["interact", "تفاعل", "hud"], ["build", "بناء", "hud"], ["torch", "مشعل", "hud"], ["crouch", "انحناء", "hud"], ["plant", "زرع", "hud"], ["water", "سقي", "hud"], ["tech", "تقنيات", "hud"], ["tresearch", "تطوير", "tech"], ["tclose", "إغلاق", "tech"], ["tup", "▲", "tech"], ["tdown", "▼", "tech"], ["aim", "تصويب", "hud"], ["weapon", "سلاح", "hud"], ["speed", "تسريع", "special"], ["scope", "عدسة", "special"], ["fire", "إطلاق", "special"], ["save", "حفظ", "hud"],
-			["hint", "تلميح", "puzzle"], ["pclose", "إغلاق", "puzzle"], ["pleft", "◀", "puzzle"], ["pright", "▶", "puzzle"]]:
+			["hint", "تلميح", "puzzle"], ["pnext", "لوحة أخرى ▸", "puzzle"], ["pclose", "إغلاق", "puzzle"], ["pleft", "◀", "puzzle"], ["pright", "▶", "puzzle"]]:
 		_btn(n[0], n[1], n[2])
 	get_viewport().size_changed.connect(_layout)
 	_layout()
@@ -193,6 +199,9 @@ func _layout() -> void:
 	bar_bot.size = Vector2(vp.x, vp.y * 0.12)
 	_put("hint", Vector2(vp.x / 2.0 - 170.0, vp.y - 110.0), Vector2(340, 90))
 	_put("pclose", Vector2(20, vp.y - 110.0), Vector2(160, 90))
+	_put("pnext", Vector2(vp.x - 280.0, vp.y - 110.0), Vector2(260, 90))
+	fade_rect.position = Vector2.ZERO
+	fade_rect.size = vp
 	_put("pleft", Vector2(vp.x * 0.04, vp.y * 0.7), Vector2(56, 110))
 	_put("pright", Vector2(vp.x * 0.96 - 56.0, vp.y * 0.7), Vector2(56, 110))
 	puzzle.layout(vp)
@@ -298,6 +307,16 @@ func cinematic_bars(secs: float) -> void:
 		t.tween_interval(secs)
 		t.tween_property(bar, "modulate:a", 0.0, 0.8)
 		t.tween_callback(func(): bar.visible = false)
+
+## Fade to black, hold, fade back (used when sleeping).
+func fade_black(hold: float) -> void:
+	fade_rect.visible = true
+	fade_rect.modulate.a = 0.0
+	var t := create_tween()
+	t.tween_property(fade_rect, "modulate:a", 1.0, 0.6)
+	t.tween_interval(hold)
+	t.tween_property(fade_rect, "modulate:a", 0.0, 0.8)
+	t.tween_callback(func(): fade_rect.visible = false)
 
 func toast(msg: String, secs: float = 2.5) -> void:
 	toast_label.text = msg

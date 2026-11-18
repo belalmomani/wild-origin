@@ -23,6 +23,8 @@ var livestock: Array = []      # animals being carried to the farm: {kind, eta(u
 var animals := {"deer": 0, "chicken": 0}   # arrived at the farm
 var barn_unlocked := false     # first live animal caught -> barn quest opens
 var barn_built := false
+var fire_fuel := 0.0           # game hours of fire left in the hearth
+var hearth_init := false       # the first fire has been lit (gift of 8 hours)
 var pen: Array = []             # animals housed at the barn (see barn_logic.gd)
 var next_pen_id := 1
 const TL := preload("res://scripts/tech_logic.gd")
@@ -39,6 +41,8 @@ func reset() -> void:
 	inv = {"wood": 0, "stone": 0, "seeds": 2, "apples": 0, "arrows": 15, "meat": 0, "hay": 0}
 	barn_unlocked = false
 	barn_built = false
+	fire_fuel = 0.0
+	hearth_init = false
 	pen = []
 	techs = []
 	next_pen_id = 1
@@ -106,7 +110,7 @@ func to_dict() -> Dictionary:
 	return {"v": 1, "inv": inv, "placed": placed.keys(), "removed": removed.keys(),
 		"pos": [player_pos.x, player_pos.y, player_pos.z], "t": time_of_day,
 		"hints": hints_left, "phase": phase, "xp": xp, "torch": torch_owned,
-		"clock": clock_hours, "weapons": weapons, "widx": weapon_idx, "livestock": livestock, "animals": animals, "pen": pen, "techs": techs, "npid": next_pen_id, "barn_u": barn_unlocked, "crops": crops, "ncid": next_crop_id, "saved": Time.get_unix_time_from_system()}
+		"clock": clock_hours, "weapons": weapons, "widx": weapon_idx, "livestock": livestock, "animals": animals, "pen": pen, "techs": techs, "npid": next_pen_id, "barn_u": barn_unlocked, "fuel": fire_fuel, "hinit": hearth_init, "crops": crops, "ncid": next_crop_id, "saved": Time.get_unix_time_from_system()}
 
 func from_dict(d: Dictionary) -> void:
 	reset()
@@ -138,6 +142,8 @@ func from_dict(d: Dictionary) -> void:
 			pen.append(e)
 	next_pen_id = int(d.get("npid", 1))
 	barn_unlocked = bool(d.get("barn_u", false))
+	fire_fuel = float(d.get("fuel", 0.0))
+	hearth_init = bool(d.get("hinit", false))
 	next_crop_id = int(d.get("ncid", 1))
 	clock_hours = float(d.get("clock", 8.0))
 	time_of_day = fposmod(clock_hours, 24.0)

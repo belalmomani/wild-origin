@@ -21,11 +21,14 @@ var bscale := 1.0
 func _ready() -> void:
 	texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
 
-func _fill(pts: PackedVector2Array, src: PackedVector2Array, col: Color, cost: String) -> void:
+static func _tex_of(p: Dictionary) -> String:
+	return str(p.get("tex", "rock" if p.cost == "stone" else "planks")) + "_a"
+
+func _fill(pts: PackedVector2Array, src: PackedVector2Array, col: Color, tname: String) -> void:
 	var uvs := PackedVector2Array()
 	for v in src:
 		uvs.append(Vector2(v.x, -v.y) * 0.45)   # same grain whether in tray, in hand or placed
-	draw_colored_polygon(pts, col, uvs, M.tex("rock_a" if cost == "stone" else "planks_a"))
+	draw_colored_polygon(pts, col, uvs, M.tex(tname))
 
 func layout(vp: Vector2) -> void:
 	position = Vector2.ZERO
@@ -87,8 +90,23 @@ func release(_pos: Vector2) -> void:
 	dragging = false
 	var pi := drag_idx
 	drag_idx = -1
+	var target := _match(pi)
+	if target >= 0:
+		dropped.emit(target)
+
+## Slot a held piece would land in: its own, or (furniture) any free slot of an identical part, e.g. one of 4 legs.
+func _match(pi: int) -> int:
+	if pi < 0:
+		return -1
 	if _near(pi):
-		dropped.emit(pi)
+		return pi
+	var sig = board.pieces[pi].get("sig", "")
+	if sig == "":
+		return -1
+	for k in board.pieces.size():
+		if k != pi and not GameState.placed.has(board.pieces[k].id) and board.pieces[k].get("sig", "") == sig and _near(k):
+			return k
+	return -1
 
 func _held_center() -> Vector2:
 	return drag_pos - Vector2(0, 70)   # drawn above the finger so it stays visible
@@ -106,8 +124,7 @@ func _near(pi: int) -> bool:
 func info_text() -> String:
 	if board.is_empty():
 		return ""
-	var cost: String = board.pieces[0].cost
-	return "%s — المتبقي %d من %d — %s: %d — تلميحات: %d" % [board.name, tray.size(), board.pieces.size(), "حجارة" if cost == "stone" else "خشب", GameState.count(cost), GameState.hints_left]
+	return "%s — المتبقي %d من %d — خشب: %d | حجر: %d — تلميحات: %d" % [board.name, tray.size(), board.pieces.size(), GameState.count("wood"), GameState.count("stone"), GameState.hints_left]
 
 func _to_screen(p: Vector2) -> Vector2:
 	var ox := board_rect.position.x + board_rect.size.x * 0.5
@@ -144,16 +161,17 @@ func _draw() -> void:
 		var b := _to_screen(r.position + r.size)
 		draw_rect(Rect2(a.x, b.y, b.x - a.x, a.y - b.y), Color(0.45, 0.3, 0.18, 0.7) if r.position.y < 0.01 else Color(0.5, 0.75, 0.95, 0.5))
 	var blink := 0.5 + 0.5 * sin(Time.get_ticks_msec() / 160.0)
+	var mt := _match(drag_idx) if dragging else -1
 	for i in board.pieces.size():
 		var p: Dictionary = board.pieces[i]
 		var pts := _screen_poly(p.poly)
 		if GameState.placed.has(p.id):
-			_fill(pts, p.poly, D.piece_color(p).lightened(0.45), p.cost)
+			_fill(pts, p.poly, D.piece_color(p).lightened(0.45), _tex_of(p))
 			_outline(pts, Color(0, 0, 0, 0.6), 1.5)
 		elif hint_t > 0.0 and i == hint_idx:
 			draw_colored_polygon(pts, Color(1, 0.9, 0.2, 0.25 + 0.5 * blink))
 			_outline(pts, Color(1, 0.9, 0.2), 3.0)
-		elif dragging and i == drag_idx and _near(i):
+		elif dragging and i == mt:
 			draw_colored_polygon(pts, Color(0.2, 1, 0.3, 0.3))
 			_outline(pts, Color(0.2, 1, 0.3), 3.0)
 		else:
@@ -189,5 +207,5 @@ func _piece_at(piece: Dictionary, ctr: Vector2, fit: float, alpha: float) -> voi
 	col.a = alpha
 	if GameState.count(piece.cost) == 0:
 		col.a *= 0.45
-	_fill(pts, piece.poly, col, piece.cost)
+	_fill(pts, piece.poly, col, _tex_of(piece))
 	_outline(pts, Color(0, 0, 0, 0.75), 2.0)

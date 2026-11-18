@@ -8,6 +8,7 @@ const FarmS := preload("res://scripts/farm.gd")
 const HuntS := preload("res://scripts/hunt.gd")
 const BarnS := preload("res://scripts/barn.gd")
 const SfxS := preload("res://scripts/sfx.gd")
+const HomeS := preload("res://scripts/home.gd")
 
 var world
 var player
@@ -16,6 +17,8 @@ var builder
 var farm
 var hunt
 var barn
+var home
+var sleeping := false
 var sfx
 var _cluck_t := 4.0
 var sun: DirectionalLight3D
@@ -149,6 +152,28 @@ func _smoke() -> void:
 		get_tree().quit(1)
 		return
 	print("SMOKE tech OK")
+	# interior phase: build every board, then check door / glass / lamp / fire / bed wiring
+	for bi3 in builder.boards.size():
+		var pcs: Array = builder.boards[bi3].pieces
+		for pi3 in pcs.size():
+			GameState.add(str(pcs[pi3].cost), 3)
+			builder.place(bi3, pi3)
+	home.refresh()
+	if not builder.shell_done() or not builder.door_complete() or home.glass_count() != 2 or not home.lamp_ready() or not home.fire_lit():
+		print("SMOKE FAIL: interior wiring")
+		get_tree().quit(1)
+		return
+	if not home.interact(Vector3(0, 0, 3.0)) or not builder.door_open:
+		print("SMOKE FAIL: door interaction")
+		get_tree().quit(1)
+		return
+	var fuel0: float = GameState.fire_fuel
+	home.tick(1.0)
+	if GameState.fire_fuel >= fuel0:
+		print("SMOKE FAIL: fire fuel does not burn")
+		get_tree().quit(1)
+		return
+	print("SMOKE interior OK")
 	if not sfx.is_ready():
 		print("SMOKE FAIL: audio files missing")
 		get_tree().quit(1)
@@ -230,6 +255,11 @@ func _start(is_new: bool) -> void:
 	barn.world = world
 	add_child(barn)
 	barn.message.connect(func(t): ui.toast(t, 4.0))
+	home = HomeS.new()
+	home.builder = builder
+	add_child(home)
+	home.message.connect(func(t): ui.toast(t, 3.5))
+	home.sleep_request.connect(_sleep)
 	if not is_new and GameState.saved_unix > 0.0:
 		var away := maxf(0.0, Time.get_unix_time_from_system() - GameState.saved_unix)
 		_offline(away * 24.0 / GameState.day_seconds)
@@ -250,6 +280,7 @@ func _offline(hours: float) -> void:
 		GameState.clock_hours += st
 		farm.tick(st, true)
 		barn.tick(st, true)
+		home.tick(st, true)
 		left -= st
 	farm.refresh_all()
 	farm.notify_after_offline()
@@ -339,6 +370,7 @@ func _on_action(a: String) -> void:
 		"interact": _interact()
 		"build": _open_build()
 		"pclose": ui.close_puzzle()
+		"pnext": _next_board()
 		"pleft": ui.puzzle.scroll_by(-1)
 		"pright": ui.puzzle.scroll_by(1)
 		"hint": _hint()
@@ -354,12 +386,37 @@ func _open_build() -> void:
 		return
 	ui.open_puzzle(builder.boards[bi])
 
+## Switch the open puzzle to the next unfinished board (walls, door, bed, ...).
+func _next_board() -> void:
+	var cur: int = builder.index_of(str(ui.puzzle.board.get("id", "")))
+	var n: int = builder.next_available(cur)
+	if n < 0 or n == cur:
+		ui.toast("لا توجد لوحات أخرى متاحة الآن", 1.8)
+		return
+	ui.open_puzzle(builder.boards[n])
+	ui.toast("اللوحة: %s" % builder.boards[n].name, 1.8)
+
+func _sleep() -> void:
+	if sleeping:
+		return
+	sleeping = true
+	ui.fade_black(1.2)
+	await get_tree().create_timer(0.7).timeout
+	_offline(fposmod(7.0 - GameState.time_of_day, 24.0))
+	GameState.time_of_day = fposmod(GameState.clock_hours, 24.0)
+	_update_sky()
+	_save()
+	ui.toast("نمتَ حتى الصباح — استيقظتَ مرتاحًا", 3.0)
+	player.emote("smile", 2.5)
+	sleeping = false
+
 func _on_drop(pi: int) -> void:
-	var bi: int = builder.current_index()
+	var bi: int = builder.index_of(str(ui.puzzle.board.get("id", "")))
 	if bi < 0:
 		return
 	if builder.place(bi, pi):
 		sfx.play("place", -2.0, randf_range(0.9, 1.1))
+		home.refresh()
 		ui.puzzle.refresh()
 		if builder.remaining(bi) == 0:
 			ui.toast("اكتملت: %s ✓" % builder.boards[bi].name, 3.0)
@@ -433,6 +490,9 @@ func _torch() -> void:
 	player.torch.visible = not player.torch.visible
 
 func _interact() -> void:
+	if home.interact(player.global_position):
+		player.play_action("gather", 0.8)
+		return
 	if barn.interact(player.global_position):
 		player.play_action("gather", 0.8)
 		return
@@ -491,6 +551,7 @@ func _process(d: float) -> void:
 	GameState.time_of_day = fposmod(GameState.clock_hours, 24.0)
 	farm.tick(dh)
 	barn.tick(dh)
+	home.tick(dh)
 	_update_sky()
 	hud_t += d
 	if hud_t > 0.25:
@@ -509,17 +570,20 @@ func _hud() -> void:
 		q = "اصطد واحصل على حيوان حي لفتح الحظيرة (أصِب الساق ثم تفاعل)" if not GameState.barn_unlocked else "الحظيرة جاهزة: أطعم الحيوانات كل يوم (اقترب واضغط «تفاعل»)"
 	else:
 		var b: Dictionary = builder.boards[bi]
-		var cost: String = b.pieces[0].cost
+		var cost: String = builder.next_cost(bi)
 		q = "%s — متبقي %d قطعة — لديك %d %s. اجمع ثم اضغط «بناء»" % [b.name, builder.remaining(bi), g.count(cost), "حجارة" if cost == "stone" else "خشب"]
 	var hr := int(g.time_of_day)
 	var res := "خشب %d | حجر %d | بذور %d | تفاح %d | مستوى %d | الوقت %02d:%02d" % [g.count("wood"), g.count("stone"), g.count("seeds"), g.count("apples"), g.level(), hr, int((g.time_of_day - hr) * 60.0)]
 	var night := GameState.time_of_day < 6.0 or GameState.time_of_day >= 18.5
 	for l in lamp_lights:
 		l.visible = night
+	home.set_night(night)
 	GameState.barn_built = GameState.barn_unlocked and builder.barn_done()
 	var ct: String = farm.info_text(player.global_position)
 	if ct == "":
 		ct = barn.info_text(player.global_position)
+	if ct == "":
+		ct = home.info_text(player.global_position)
 	ui.set_crop(ct)
 	var tt: String = hunt.transit_text()
 	ui.set_hunt(hunt.weapon_text() + ("\n" + tt if tt != "" else ""))
