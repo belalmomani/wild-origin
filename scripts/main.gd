@@ -81,6 +81,20 @@ func _smoke() -> void:
 		print("SMOKE FAIL: deer kill/loot")
 		get_tree().quit(1)
 		return
+	var ibx = hunt.first_of("ibex")
+	if ibx == null or ibx.bones.is_empty():
+		print("SMOKE FAIL: ibex model missing")
+		get_tree().quit(1)
+		return
+	ibx.tick(0.1, player.global_position + Vector3(0, 0, 100), false, world)
+	hunt.apply_hit(ibx, "head")
+	hunt.apply_hit(ibx, "head")
+	ibx.global_position = player.global_position + Vector3(0, 0, -1)
+	meat0 = GameState.count("meat")
+	if not ibx.dead or not hunt.interact_nearby() or GameState.count("meat") != meat0 + 5:
+		print("SMOKE FAIL: ibex kill/loot")
+		get_tree().quit(1)
+		return
 	var hen = hunt.first_of("chicken")
 	hunt.apply_hit(hen, "legs")
 	hen.global_position = player.global_position + Vector3(0, 0, -1)

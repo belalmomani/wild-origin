@@ -2,6 +2,7 @@ extends Node3D
 ## Wild animal (deer / chicken): procedural 3D body with walking legs, wander/flee AI, hit zones for shooting.
 const M := preload("res://scripts/mats.gd")
 const L := preload("res://scripts/hunt_logic.gd")
+const Rig := preload("res://scripts/animal_rig.gd")
 var kind := "deer"
 var hp := 100.0
 var max_hp := 100.0
@@ -13,6 +14,11 @@ var state_t := 0.0
 var dir := Vector3.ZERO
 var phase := 0.0
 var legs: Array = []
+var bones := {}            # rigged models (deer / ibex): bone name -> Node3D
+var idle_mode := ""        # "", "eat", "look", "alert"
+var idle_t := 0.0
+var hurt_t := 0.0
+var _moving := 0.0
 var rng := RandomNumberGenerator.new()
 var corpse_t := 0.0
 var tame := false
@@ -87,11 +93,94 @@ func setup(k: String, seed_v: int) -> void:
 	hp = info["hp"]
 	max_hp = hp
 	add_to_group("animal")
-	if k == "deer":
-		_build_deer()
-	else:
+	if Rig.has_model(k):
+		_build_model(k)
+	elif k == "chicken":
 		_build_chicken()
+	else:
+		_build_deer()
 	state_t = rng.randf_range(0.5, 3.0)
+
+## Rigged model from the supplied assets (forest deer / Nubian ibex). Falls back to the simple procedural deer.
+func _build_model(k: String) -> void:
+	var r: Dictionary = Rig.build(k, self)
+	bones = r["bones"]
+	if bones.is_empty():
+		_build_deer()
+		return
+	var z: Dictionary = r["zones"]
+	_zone("head", z["head"]["size"], z["head"]["pos"])
+	_zone("body", z["body"]["size"], z["body"]["pos"])
+	_zone("legs", z["legs"]["size"], z["legs"]["pos"])
+
+func flinch() -> void:
+	hurt_t = 0.5
+
+func _b(n: String) -> Node3D:
+	return bones.get(n)
+
+## Procedural pose for rigged models: diagonal gait with knee fold, spine bounce, tail/ears, idle behaviours.
+func _animate(d: float, spd: float) -> void:
+	var t := Time.get_ticks_msec() * 0.001 + float(get_instance_id() % 97)
+	var run := clampf(spd / 3.0, 0.0, 1.0)
+	_moving = lerpf(_moving, run, clampf(8.0 * d, 0.0, 1.0))
+	var amp := 0.55 * _moving + 0.1 * clampf(spd / 7.0, 0.0, 1.0)
+	for lab in ["f", "h"]:
+		for side in ["l", "r"]:
+			var up := _b("%s%s_up" % [lab, side])
+			var lo := _b("%s%s_lo" % [lab, side])
+			var ft := _b("%s%s_ft" % [lab, side])
+			if up == null:
+				continue
+			# diagonal pairs: front-left moves with hind-right
+			var ph := phase + (0.0 if ((lab == "f" and side == "l") or (lab == "h" and side == "r")) else PI)
+			up.rotation.x = sin(ph) * amp
+			var fold := maxf(0.0, cos(ph)) * 0.9 * _moving
+			if lo != null:
+				lo.rotation.x = -fold * (1.0 if lab == "f" else 0.8)
+			if ft != null:
+				ft.rotation.x = fold * 0.4
+	var bounce := sin(phase * 2.0) * 0.04 * _moving
+	var sp := _b("spine")
+	if sp != null:
+		sp.rotation.x = bounce
+	var nk := _b("neck")
+	var hd := _b("head")
+	var nx := -sin(phase * 2.0) * 0.06 * _moving
+	var hx := 0.0
+	var hy := 0.0
+	var ear := 0.0
+	match idle_mode:
+		"eat":
+			nx += -0.75 + sin(t * 5.0) * 0.06
+			hx += -0.35
+		"look":
+			hy = sin(t * 1.6) * 0.5
+			hx = -0.05
+		"alert":
+			nx += 0.12
+			hx = 0.1
+			ear = 0.25
+	if state == "flee":
+		nx += 0.15
+		hx += 0.1
+	if hurt_t > 0.0:
+		hurt_t -= d
+		nx += 0.25 * sin(hurt_t * 12.0)
+		hy += 0.3 * sin(hurt_t * 18.0)
+	if nk != null:
+		nk.rotation.x = lerpf(nk.rotation.x, nx, clampf(10.0 * d, 0.0, 1.0))
+	if hd != null:
+		hd.rotation.x = lerpf(hd.rotation.x, hx, clampf(10.0 * d, 0.0, 1.0))
+		hd.rotation.y = lerpf(hd.rotation.y, hy, clampf(6.0 * d, 0.0, 1.0))
+	var tl := _b("tail")
+	if tl != null:
+		tl.rotation.z = sin(t * 4.0) * 0.12
+	for n in ["ear_l", "ear_r"]:
+		var e := _b(n)
+		if e != null:
+			var tw := 0.18 * maxf(0.0, sin(t * 0.7 + (1.0 if n == "ear_l" else 3.0)) - 0.8) * 5.0
+			e.rotation.z = (ear + tw) * (-1.0 if n == "ear_l" else 1.0)
 
 func _leg(parent: Node3D, pos: Vector3, r: float, h: float, mat: Material, hoof: Material) -> void:
 	var p := Node3D.new()
@@ -166,6 +255,7 @@ func tick(d: float, ppos: Vector3, crouch: bool, world) -> void:
 	var spd := 0.0
 	match state:
 		"flee":
+			idle_mode = ""
 			spd = info["run"]
 			if state_t <= 0.0:
 				state = "wander"
@@ -183,6 +273,13 @@ func tick(d: float, ppos: Vector3, crouch: bool, world) -> void:
 					var a := rng.randf() * TAU
 					dir = Vector3(cos(a), 0, sin(a))
 			spd = info["walk"] if dir != Vector3.ZERO else 0.0
+			if dir == Vector3.ZERO and not bones.is_empty():
+				idle_t -= d
+				if idle_t <= 0.0:
+					idle_t = rng.randf_range(2.0, 5.0)
+					idle_mode = ["eat", "look", "", "alert"][rng.randi() % 4]
+			else:
+				idle_mode = ""
 	if wounded:
 		spd *= 0.4
 	var p := global_position + dir * spd * d
@@ -194,6 +291,9 @@ func tick(d: float, ppos: Vector3, crouch: bool, world) -> void:
 	if spd > 0.05:
 		rotation.y = lerp_angle(rotation.y, atan2(-dir.x, -dir.z), 8.0 * d)
 	phase += d * spd * 3.5
+	if not bones.is_empty():
+		_animate(d, spd)
+		return
 	var sw := sin(phase) * 0.6 * clampf(spd / 3.0, 0.0, 1.0)
 	for i in legs.size():
 		(legs[i] as Node3D).rotation.x = sw if (i % 3 == 0) else -sw   # diagonal gait

@@ -20,7 +20,7 @@ var saved_unix := 0.0
 var weapons: Array = ["slingshot"]
 var weapon_idx := 0
 var livestock: Array = []      # animals being carried to the farm: {kind, eta(unix)}
-var animals := {"deer": 0, "chicken": 0}   # arrived at the farm
+var animals := {"deer": 0, "ibex": 0, "chicken": 0}   # arrived at the farm
 var barn_unlocked := false     # first live animal caught -> barn quest opens
 var barn_built := false
 var builds_done := 0           # finished builds since this save was first seen (each = +1% difficulty)
@@ -58,7 +58,7 @@ func reset() -> void:
 	weapons = ["slingshot"]
 	weapon_idx = 0
 	livestock = []
-	animals = {"deer": 0, "chicken": 0}
+	animals = {"deer": 0, "ibex": 0, "chicken": 0}
 	crops = []
 	next_crop_id = 1
 	clock_hours = 8.0
@@ -141,7 +141,7 @@ func from_dict(d: Dictionary) -> void:
 		if typeof(e) == TYPE_DICTIONARY:
 			livestock.append(e)
 	var an: Dictionary = d.get("animals", {})
-	animals = {"deer": int(an.get("deer", 0)), "chicken": int(an.get("chicken", 0))}
+	animals = {"deer": int(an.get("deer", 0)), "ibex": int(an.get("ibex", 0)), "chicken": int(an.get("chicken", 0))}
 	techs = []
 	for tid in d.get("techs", []):
 		techs.append(str(tid))

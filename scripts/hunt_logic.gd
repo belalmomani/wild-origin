@@ -8,6 +8,7 @@ const WEAPONS := {
 const ORDER := ["slingshot", "bow", "crossbow"]
 const ANIMALS := {
 	"deer": {"name": "غزال", "hp": 100.0, "walk": 1.3, "run": 7.0, "flee": 16.0, "meat": 6},
+	"ibex": {"name": "وعل", "hp": 80.0, "walk": 1.1, "run": 8.5, "flee": 18.0, "meat": 5},
 	"chicken": {"name": "دجاجة", "hp": 30.0, "walk": 0.8, "run": 3.8, "flee": 8.0, "meat": 2},
 }
 const TRANSIT_SECONDS := 180.0   # carrying a live animal to the farm takes 3 minutes

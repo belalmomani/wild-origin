@@ -113,6 +113,7 @@ func info_text(pos: Vector3) -> String:
 	if GameState.pen.is_empty() or pos.distance_to(center) > 10.0:
 		return ""
 	var deer := 0
+	var ibex := 0
 	var hens := 0
 	var worst := 1.0
 	var hung := 0.0
@@ -120,9 +121,11 @@ func info_text(pos: Vector3) -> String:
 	for a in GameState.pen:
 		if str(a.kind) == "deer":
 			deer += 1
+		elif str(a.kind) == "ibex":
+			ibex += 1
 		else:
 			hens += 1
 		worst = minf(worst, float(a.h))
 		hung = maxf(hung, L.hunger(a, now))
 	var state := "" if GameState.barn_built else " (ابنِ الحظيرة ليبدأ الاعتناء بها)"
-	return "الحظيرة: غزلان %d، دجاج %d%s\nالجوع %s | الصحة %s | علف: تفاح %d، قش %d" % [deer, hens, state, _bar(clampf(hung / L.GRACE, 0.0, 1.0)), _bar(worst), GameState.count("apples"), GameState.count("hay")]
+	return "الحظيرة: غزلان %d، وعول %d، دجاج %d%s\nالجوع %s | الصحة %s | علف: تفاح %d، قش %d" % [deer, ibex, hens, state, _bar(clampf(hung / L.GRACE, 0.0, 1.0)), _bar(worst), GameState.count("apples"), GameState.count("hay")]

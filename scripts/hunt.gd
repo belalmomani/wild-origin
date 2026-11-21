@@ -22,6 +22,8 @@ func _ready() -> void:
 	_rng.seed = 2026
 	for i in 8:
 		_spawn("deer")
+	for i in 5:
+		_spawn("ibex")
 	for i in 10:
 		_spawn("chicken")
 	Ads.reward_granted.connect(_on_reward)
@@ -199,6 +201,8 @@ func apply_hit(a, zone: String) -> void:
 	var wid: String = GameState.weapons[GameState.weapon_idx]
 	var r := L.shot(wid, zone, a.hp, a.max_hp)
 	a.hp = r["hp"]
+	if not r["dead"]:
+		a.flinch()
 	sound.emit("hit")
 	var nm: String = L.ANIMALS[a.kind]["name"]
 	var names := {"head": "الرأس", "body": "الجسم", "legs": "الساق"}

@@ -73,12 +73,12 @@ func _init() -> void:
 	if gate_pieces < 50:
 		print("FAIL gate pieces: ", gate_pieces); fails += 1
 	# difficulty: +1% per finished build (a fresh instance: autoloads do not exist inside _init)
-	var gs = load("res://scripts/game_state.gd").new()
-	var d0: float = gs.difficulty()
-	gs.builds_done = 10
-	if absf(d0 - 1.0) > 0.0001 or absf(float(gs.difficulty()) - 1.1046) > 0.001 or int(gs.difficulty_pct()) != 10:
-		print("FAIL difficulty curve ", gs.difficulty()); fails += 1
-	gs.free()
+	var gs0 = load("res://scripts/game_state.gd").new()
+	var d0: float = gs0.difficulty()
+	gs0.builds_done = 10
+	if absf(d0 - 1.0) > 0.0001 or absf(float(gs0.difficulty()) - 1.1046) > 0.001 or int(gs0.difficulty_pct()) != 10:
+		print("FAIL difficulty curve ", gs0.difficulty()); fails += 1
+	gs0.free()
 	print("pieces per board: ", boards.map(func(b): return b.pieces.size()))
 	var F = load("res://scripts/farm_logic.gd")
 	var c = F.new_crop(1, 0.0, 0.0, 0.0)
@@ -186,4 +186,34 @@ func _init() -> void:
 	if gs.spend("stone", 1):
 		print("FAIL spend with no stone"); fails += 1
 	print("TESTS ", "FAILED" if fails > 0 else "PASSED")
+	# animals (phase 4): generated deer / ibex rig data must be consistent (bone parents, index bounds, hit zones)
+	for k in ["deer", "ibex"]:
+		var ad: Dictionary = load("res://assets/animals/%s_data.gd" % k).data()
+		var names := {}
+		for bn in ad["bones"]:
+			if str(bn["parent"]) != "" and not names.has(str(bn["parent"])):
+				print("FAIL ", k, " bone parent order ", bn["name"]); fails += 1
+			names[str(bn["name"])] = true
+		var tris := 0
+		for mk in ad["meshes"]:
+			var m: Dictionary = ad["meshes"][mk]
+			var vc: int = m["v"].size() / 3
+			if not names.has(mk) or m["n"].size() != m["v"].size() or m["c"].size() != m["v"].size():
+				print("FAIL ", k, " mesh arrays ", mk); fails += 1
+			for ix in m["i"]:
+				if ix < 0 or ix >= vc:
+					print("FAIL ", k, " index out of range ", mk); fails += 1
+					break
+			tris += m["i"].size() / 3
+		if tris < 1000 or tris > 9000:
+			print("FAIL ", k, " triangle count ", tris); fails += 1
+		for z in ["head", "body", "legs"]:
+			if not ad["zones"].has(z):
+				print("FAIL ", k, " zone ", z); fails += 1
+		for bn in ["fl_up", "fr_up", "hl_up", "hr_up", "neck", "head"]:
+			if not names.has(bn):
+				print("FAIL ", k, " missing bone ", bn); fails += 1
+	var HL = load("res://scripts/hunt_logic.gd")
+	if not HL.ANIMALS.has("ibex") or float(HL.ANIMALS["ibex"]["hp"]) <= 0.0:
+		print("FAIL ibex stats"); fails += 1
 	quit(1 if fails > 0 else 0)
