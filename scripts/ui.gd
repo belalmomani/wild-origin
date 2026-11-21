@@ -40,6 +40,8 @@ var tech
 var tech_btns: Array = []
 var _tween: Tween
 var fade_rect: ColorRect
+var prompt_label: Label
+var vignette: TextureRect
 
 func _ready() -> void:
 	layer = 10
@@ -64,6 +66,24 @@ func _ready() -> void:
 	puzzle_info = _label(28)
 	crop_label = _label(24)
 	hunt_label = _label(22)
+	prompt_label = _label(26)
+	prompt_label.visible = false
+	vignette = TextureRect.new()      # soft dark edges: cheap cinematic look, drawn under the buttons
+	var vg := Gradient.new()
+	vg.offsets = PackedFloat32Array([0.5, 1.0])
+	vg.colors = PackedColorArray([Color(0, 0, 0, 0), Color(0, 0, 0, 0.5)])
+	var vt := GradientTexture2D.new()
+	vt.gradient = vg
+	vt.fill = GradientTexture2D.FILL_RADIAL
+	vt.fill_from = Vector2(0.5, 0.5)
+	vt.fill_to = Vector2(1.0, 0.5)
+	vt.width = 256
+	vt.height = 256
+	vignette.texture = vt
+	vignette.stretch_mode = TextureRect.STRETCH_SCALE
+	vignette.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	vignette.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(vignette)
 	crosshair = _label(54)
 	crosshair.text = "+"
 	scope_img = TextureRect.new()
@@ -94,7 +114,7 @@ func _ready() -> void:
 	add_child(fade_rect)
 	stick_base = _circle(180, Color(1, 1, 1, 0.18))
 	stick_knob = _circle(80, Color(1, 1, 1, 0.45))
-	for n in [["new", "لعبة جديدة", "menu"], ["continue", "متابعة اللعبة", "menu"], ["quality", "الجودة", "menu"], ["sound", "الصوت", "menu"], ["day", "مدة اليوم", "menu"], ["gentle", "تخفيف المشاهد", "menu"],
+	for n in [["new", "لعبة جديدة", "menu"], ["continue", "متابعة اللعبة", "menu"], ["quality", "الجودة", "menu"], ["sound", "الصوت", "menu"], ["day", "مدة اليوم", "menu"], ["gentle", "تخفيف المشاهد", "menu"], ["sens", "الحساسية", "menu"],
 			["jump", "قفز", "hud"], ["interact", "تفاعل", "hud"], ["build", "بناء", "hud"], ["torch", "مشعل", "hud"], ["crouch", "انحناء", "hud"], ["plant", "زرع", "hud"], ["water", "سقي", "hud"], ["tech", "تقنيات", "hud"], ["tresearch", "تطوير", "tech"], ["tclose", "إغلاق", "tech"], ["tup", "▲", "tech"], ["tdown", "▼", "tech"], ["aim", "تصويب", "hud"], ["weapon", "سلاح", "hud"], ["speed", "تسريع", "special"], ["scope", "عدسة", "special"], ["fire", "إطلاق", "special"], ["save", "حفظ", "hud"],
 			["hint", "تلميح", "puzzle"], ["pnext", "لوحة أخرى ▸", "puzzle"], ["pclose", "إغلاق", "puzzle"], ["pleft", "◀", "puzzle"], ["pright", "▶", "puzzle"]]:
 		_btn(n[0], n[1], n[2])
@@ -159,9 +179,13 @@ func _layout() -> void:
 	toast_label.position = Vector2(0, vp.y * 0.55)
 	toast_label.size = Vector2(vp.x, 60)
 	var cx := vp.x / 2.0 - 190.0
-	for i in 6:
-		var nm: String = ["new", "continue", "quality", "sound", "day", "gentle"][i]
-		_put(nm, Vector2(cx, vp.y * 0.26 + i * 74.0), Vector2(380, 64))
+	for i in 7:
+		var nm: String = ["new", "continue", "quality", "sound", "day", "gentle", "sens"][i]
+		_put(nm, Vector2(cx, vp.y * 0.22 + i * 68.0), Vector2(380, 60))
+	prompt_label.position = Vector2(vp.x * 0.25, vp.y - 62.0)
+	prompt_label.size = Vector2(vp.x * 0.5, 40)
+	vignette.position = Vector2.ZERO
+	vignette.size = vp
 	hunt_label.position = Vector2(0, 166)
 	hunt_label.size = Vector2(vp.x, 30)
 	crosshair.position = Vector2(vp.x * 0.5 - 30.0, vp.y * 0.5 - 38.0)
@@ -251,7 +275,18 @@ func _set_mode() -> void:
 	puzzle_info.visible = in_puzzle
 	for l in [res_label, quest_label, crop_label, hunt_label]:
 		l.visible = not in_menu and not in_puzzle and not in_tech
+	vignette.visible = not in_menu and not in_puzzle and not in_tech and GameState.quality >= 1
+	if in_menu or in_puzzle or in_tech:
+		prompt_label.visible = false
 	_special()
+
+func set_sens_text(idx: int) -> void:
+	buttons["sens"].text = "الحساسية: " + ["منخفضة", "متوسطة", "عالية"][idx]
+
+## Context hint above the bottom edge ("تفاعل: افتح الباب" ...). "" hides it.
+func set_prompt(t: String) -> void:
+	prompt_label.text = t
+	prompt_label.visible = t != "" and not in_menu and not in_puzzle and not in_tech
 
 func set_quality_text(q: int) -> void:
 	buttons["quality"].text = "الجودة: " + ["منخفضة", "متوسطة", "عالية"][q]
@@ -361,7 +396,7 @@ func _press(idx: int, pos: Vector2) -> void:
 			puzzle_id = idx
 		return
 	var vp := get_viewport().get_visible_rect().size
-	if pos.x < vp.x * 0.4 and pos.y > vp.y * 0.35 and stick_id == -1:
+	if pos.x < vp.x * 0.45 and pos.y > vp.y * 0.3 and stick_id == -1:
 		stick_id = idx
 		stick_center = pos
 		stick_base.position = pos - stick_base.size / 2.0
@@ -387,6 +422,14 @@ func _stick(p: Vector2) -> void:
 	var r := 90.0
 	var d := p - stick_center
 	if d.length() > r:
+		# the base follows the thumb when it is dragged past the rim, so you never run out of stick
+		stick_center += d - d.normalized() * r
+		stick_base.position = stick_center - stick_base.size / 2.0
 		d = d.normalized() * r
-	GameState.move = d / r
+	var v := d / r
+	var l := v.length()
+	if l < 0.12:
+		GameState.move = Vector2.ZERO      # dead zone
+	else:
+		GameState.move = v.normalized() * pow((l - 0.12) / 0.88, 1.25)   # gentle start, full speed at the rim
 	stick_knob.position = stick_center + d - stick_knob.size / 2.0

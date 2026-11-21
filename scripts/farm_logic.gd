@@ -42,12 +42,12 @@ static func harvest(c: Dictionary, now: float) -> void:
 	c.nf = now + REFRUIT_DAYS
 
 ## Advance one crop. Returns an event: "", "dry", "dying", "dead" or "fruit".
-static func step(c: Dictionary, now: float, dt: float, offline: bool) -> String:
+static func step(c: Dictionary, now: float, dt: float, offline: bool, boost: float = 1.0) -> String:
 	if c.dead:
 		return ""
 	var since := now - float(c.lw)
 	var m := clampf(1.0 - since / DRY_LIMIT, 0.0, 1.0)
-	c.g = float(c.g) + dt * clampf(m * 2.0, 0.0, 1.0)
+	c.g = float(c.g) + dt * clampf(m * 2.0, 0.0, 1.0) * boost
 	var h := float(c.h)
 	if since > DRY_LIMIT:
 		var nh := h - dt * DECAY_PER_DAY

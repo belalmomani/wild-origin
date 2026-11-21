@@ -4,6 +4,8 @@ signal message(text: String)
 const L := preload("res://scripts/farm_logic.gd")
 const G := preload("res://scripts/mesh_gen.gd")
 const M := preload("res://scripts/mats.gd")
+const D := preload("res://scripts/building_data.gd")
+const FARM_BOOST := 1.25   # trees inside the finished farm fence grow 25% faster
 const MAX_OFFLINE_HOURS := 48.0
 var world
 var nodes := {}
@@ -91,7 +93,10 @@ func tick(dt_hours: float, offline: bool = false) -> void:
 	var now := _now()
 	var dt := dt_hours / 24.0
 	for c in GameState.crops:
-		var ev := L.step(c, now, dt, offline)
+		var boost := 1.0
+		if GameState.farm_built and absf(float(c.x) - D.FARM_C.x) < 4.6 and absf(float(c.z) - D.FARM_C.z) < 4.6:
+			boost = FARM_BOOST
+		var ev := L.step(c, now, dt, offline, boost)
 		if offline:
 			continue
 		match ev:

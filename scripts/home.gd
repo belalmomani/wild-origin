@@ -150,16 +150,17 @@ func _process(d: float) -> void:
 func _d2(a: Vector3, b: Vector3) -> float:
 	return Vector2(a.x - b.x, a.z - b.z).length()
 
-## The «تفاعل» button near the door, bed or hearth. Returns true when it handled the press.
-func interact(pos: Vector3) -> bool:
+## What the «تفاعل» button would act on at `pos`: "door:house", "door:fence", "door:farm", "bed", "fire" or "".
+func _target(pos: Vector3) -> String:
 	var best := ""
 	var bd := 99.0
 	var d: float
-	if builder.door_complete():
-		d = _d2(pos, D.DOOR_C)
-		if d < 2.6 and d < bd:
-			bd = d
-			best = "door"
+	for g in D.DOORS:
+		if builder.group_complete(g):
+			d = _d2(pos, D.DOORS[g]["c"])
+			if d < float(D.DOORS[g]["reach"]) and d < bd:
+				bd = d
+				best = "door:" + g
 	if _done("I_bed"):
 		d = _d2(pos, D.BED_C)
 		if d < 1.7 and d < bd:
@@ -170,26 +171,45 @@ func interact(pos: Vector3) -> bool:
 		if d < 1.7 and d < bd:
 			bd = d
 			best = "fire"
-	match best:
-		"door":
-			var r: String = builder.toggle_door(pos)
-			if r == "open":
-				message.emit("فتحتَ الباب")
-			elif r == "closed":
-				message.emit("أغلقتَ الباب")
-			elif r == "blocked":
-				message.emit("ابتعد عن الباب أولًا ثم أغلقه")
-			return true
-		"bed":
-			var tod: float = GameState.time_of_day
-			if tod >= 6.0 and tod < 18.5:
-				message.emit("لا تشعر بالنعاس — يمكنك النوم من الغروب (18:30) حتى الفجر")
-			else:
-				sleep_request.emit()
-			return true
-		"fire":
-			_tend_fire()
-			return true
+	return best
+
+## Short on-screen hint for the interact button ("" = nothing special here).
+func hint(pos: Vector3) -> String:
+	var t := _target(pos)
+	if t.begins_with("door:"):
+		var g := t.substr(5)
+		return "تفاعل: %s %s" % ["أغلق" if builder.is_open(g) else "افتح", str(D.DOORS[g]["name"])]
+	if t == "bed":
+		var tod: float = GameState.time_of_day
+		return "تفاعل: نم حتى الصباح" if (tod < 6.0 or tod >= 18.5) else "السرير — يمكنك النوم بعد الغروب"
+	if t == "fire":
+		return "تفاعل: أضف حطبًا / اطبخ اللحم"
+	return ""
+
+## The «تفاعل» button near a door/gate, the bed or the hearth. Returns true when it handled the press.
+func interact(pos: Vector3) -> bool:
+	var best := _target(pos)
+	if best.begins_with("door:"):
+		var g := best.substr(5)
+		var r: String = builder.toggle_group(g, pos)
+		var nm := str(D.DOORS[g]["name"])
+		if r == "open":
+			message.emit("فتحتَ %s" % nm)
+		elif r == "closed":
+			message.emit("أغلقتَ %s" % nm)
+		elif r == "blocked":
+			message.emit("ابتعد قليلًا ثم أغلق %s" % nm)
+		return true
+	if best == "bed":
+		var tod: float = GameState.time_of_day
+		if tod >= 6.0 and tod < 18.5:
+			message.emit("لا تشعر بالنعاس — يمكنك النوم من الغروب (18:30) حتى الفجر")
+		else:
+			sleep_request.emit()
+		return true
+	if best == "fire":
+		_tend_fire()
+		return true
 	return false
 
 func _tend_fire() -> void:

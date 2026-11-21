@@ -4,18 +4,16 @@ signal message(text: String)
 const D := preload("res://scripts/building_data.gd")
 const M := preload("res://scripts/mats.gd")
 var boards: Array = []
-var door_pivot: Node3D
-var door_open := false
+var pivots := {}      # "group:leaf" -> Node3D hinge (house door, fence gate leaves, farm gate leaves)
+var opened := {}      # group -> bool
 
 func _ready() -> void:
 	boards = D.make_boards()
-	door_pivot = Node3D.new()      # the house door: its pieces hang here and swing on the hinge
-	door_pivot.position = D.DOOR_HINGE
-	add_child(door_pivot)
 	for b in boards:
 		for p in b.pieces:
 			if GameState.placed.has(p.id):
 				_spawn(p)
+	_update_progress()
 
 func remaining(bi: int) -> int:
 	var n := 0
@@ -51,8 +49,10 @@ func available(i: int) -> bool:
 	var id := str(boards[i].id)
 	if id.begins_with("B"):
 		return GameState.barn_unlocked
-	if id.begins_with("I_"):
+	if id.begins_with("I_") or id.begins_with("M_"):
 		return shell_done()
+	if id.begins_with("G_"):
+		return board_done("S0")
 	return true
 
 func current_index() -> int:
@@ -76,25 +76,57 @@ func next_cost(bi: int) -> String:
 	return "wood"
 
 func door_complete() -> bool:
-	return board_done("I_door")
+	return group_complete("house")
 
-## Open/close the house door. Returns "open", "closed", "blocked" or "no" (door not built yet).
-func toggle_door(pos: Vector3) -> String:
-	if not door_complete():
+func group_complete(g: String) -> bool:
+	return board_done(str(D.DOORS[g]["board"]))
+
+func is_open(g: String) -> bool:
+	return bool(opened.get(g, false))
+
+func farm_done() -> bool:
+	for id in ["M_S0", "M_S1", "M_S2", "M_S3", "M_gate"]:
+		if not board_done(id):
+			return false
+	return true
+
+func _pivot(group: String, leaf: String, hinge: Vector3, angle: float) -> Node3D:
+	var key := group + ":" + leaf
+	if pivots.has(key):
+		return pivots[key]
+	var n := Node3D.new()
+	n.position = hinge
+	n.set_meta("group", group)
+	n.set_meta("angle", angle)
+	add_child(n)
+	pivots[key] = n
+	return n
+
+## Open/close a hinged door or gate group ("house", "fence", "farm"). Returns "open", "closed", "blocked" or "no".
+func toggle_group(g: String, pos: Vector3) -> String:
+	if not group_complete(g):
 		return "no"
-	if door_open and absf(pos.x) < 1.2 and pos.z > 1.6 and pos.z < 3.3:
-		return "blocked"      # standing where the leaf would swing through
-	door_open = not door_open
-	var t := create_tween().set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
-	t.tween_property(door_pivot, "rotation:y", -1.75 if door_open else 0.0, 0.6)
-	if door_open:
-		_door_collision(false)
-	else:
-		t.tween_callback(func(): _door_collision(true))
-	return "open" if door_open else "closed"
+	var info: Dictionary = D.DOORS[g]
+	var rel: Vector3 = pos - (info["c"] as Vector3)
+	rel.y = 0.0
+	if is_open(g) and rel.length() < float(info["block"]) and rel.dot(info["out"] as Vector3) > -0.35:
+		return "blocked"      # standing where the leaf would sweep through
+	var now_open := not is_open(g)
+	opened[g] = now_open
+	for key in pivots:
+		var node: Node3D = pivots[key]
+		if str(node.get_meta("group")) != g:
+			continue
+		var t := create_tween().set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+		t.tween_property(node, "rotation:y", float(node.get_meta("angle")) if now_open else 0.0, 0.6)
+		if now_open:
+			_door_collision(node, false)
+		else:
+			t.tween_callback(_door_collision.bind(node, true))
+	return "open" if now_open else "closed"
 
-func _door_collision(on: bool) -> void:
-	for c in door_pivot.get_children():
+func _door_collision(node: Node3D, on: bool) -> void:
+	for c in node.get_children():
 		if c is StaticBody3D:
 			(c as StaticBody3D).collision_layer = 1 if on else 0
 
@@ -103,13 +135,31 @@ func place(bi: int, pi: int) -> bool:
 	if GameState.placed.has(p.id):
 		return false
 	var free := GameState.has_tech("build_save") and GameState.placed.size() % 2 == 1
-	if not free and not GameState.spend(p.cost, 1):
-		message.emit("ينقصك %s — اجمع المزيد" % ("حجارة" if p.cost == "stone" else "خشب"))
-		return false
+	if not free:
+		# every finished build makes the next ones 1% harder: the price per piece grows (fractions accumulate)
+		var acc: float = GameState.cost_acc + GameState.difficulty()
+		var take := int(acc)
+		if GameState.count(p.cost) < take:
+			message.emit("ينقصك %s — تحتاج %d للقطعة (الصعوبة +%d%%)" % ["حجارة" if p.cost == "stone" else "خشب", take, GameState.difficulty_pct()])
+			return false
+		GameState.spend(p.cost, take)
+		GameState.cost_acc = acc - float(take)
 	GameState.placed[p.id] = true
 	GameState.xp += 1
 	_spawn(p)
+	if remaining(bi) == 0:
+		_update_progress()
 	return true
+
+## Finished builds raise the difficulty by 1% each (counted from the first time this save was seen).
+func _update_progress() -> void:
+	var done := 0
+	for i in boards.size():
+		if remaining(i) == 0:
+			done += 1
+	if GameState.diff_base < 0:
+		GameState.diff_base = done
+	GameState.builds_done = maxi(0, done - GameState.diff_base)
 
 func _spawn(p: Dictionary) -> void:
 	var mesh := _extrude(p.mesh_poly, p.thick)
@@ -134,10 +184,13 @@ func _spawn(p: Dictionary) -> void:
 		cs.shape = mesh.create_convex_shape()
 		body.add_child(cs)
 	var xf: Transform3D = p.xf
-	if p.get("door", false):
-		body.transform = Transform3D(xf.basis, xf.origin - D.DOOR_HINGE)
-		door_pivot.add_child(body)
-		if door_open:
+	var grp := str(p.get("door", ""))
+	if grp != "":
+		var hinge: Vector3 = p["hinge"]
+		var pv := _pivot(grp, str(p["leaf"]), hinge, float(p["angle"]))
+		body.transform = Transform3D(xf.basis, xf.origin - hinge)
+		pv.add_child(body)
+		if is_open(grp):
 			body.collision_layer = 0
 	else:
 		add_child(body)

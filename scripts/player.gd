@@ -11,6 +11,9 @@ const HERO_PATH := "res://assets/hero/hero.glb"
 var cam_yaw := 0.0
 var cam_pitch := -0.3
 var jump_req := false
+var jump_buf := 0.0      # a jump pressed just before landing still counts
+var coyote := 0.0        # ...and one pressed just after walking off an edge
+var look_pending := Vector2.ZERO   # camera drag not applied yet (smoothing)
 var crouch := false
 var action := ""
 var action_left := 0.0
@@ -162,9 +165,13 @@ func _physics_process(d: float) -> void:
 	var cd := GameState.cam_delta
 	GameState.cam_delta = Vector2.ZERO
 	if not intro_lock:
-		var sens := 0.3 if scoped else 1.0
-		cam_yaw -= cd.x * 0.006 * sens
-		cam_pitch = clampf(cam_pitch - cd.y * 0.006 * sens, -1.2, 0.3)
+		var sens := (0.3 if scoped else 1.0) * GameState.sens_mult()
+		# smoothed look: the drag is applied over a few frames (no jitter), nothing is lost
+		look_pending += cd
+		var take := look_pending * clampf(d * 28.0, 0.0, 1.0)
+		look_pending -= take
+		cam_yaw -= take.x * 0.006 * sens
+		cam_pitch = clampf(cam_pitch - take.y * 0.006 * sens, -1.2, 0.3)
 	arm.rotation = Vector3(cam_pitch, cam_yaw, 0.0)
 	if scoped:
 		sway_t += d
@@ -188,15 +195,24 @@ func _physics_process(d: float) -> void:
 	var speed := m.length() * top
 	if m.length() > 0.01:
 		dir = dir.normalized()
-	velocity.x = dir.x * speed
-	velocity.z = dir.z * speed
-	if not is_on_floor():
-		velocity.y -= 18.0 * d
-	elif jump_req and not crouch and not locked:
-		velocity.y = JUMP
-	else:
-		velocity.y = -1.0
+	# acceleration instead of instant speed: starts and stops feel smooth (less so in the air)
+	var accel := 38.0 if is_on_floor() else 14.0
+	var hv := Vector2(velocity.x, velocity.z).move_toward(Vector2(dir.x, dir.z) * speed, accel * d)
+	velocity.x = hv.x
+	velocity.z = hv.y
+	if jump_req:
+		jump_buf = 0.15
 	jump_req = false
+	jump_buf = maxf(0.0, jump_buf - d)
+	coyote = 0.12 if is_on_floor() else maxf(0.0, coyote - d)
+	if jump_buf > 0.0 and coyote > 0.0 and not crouch and not locked:
+		velocity.y = JUMP
+		jump_buf = 0.0
+		coyote = 0.0
+	elif is_on_floor():
+		velocity.y = -1.0
+	else:
+		velocity.y -= 18.0 * d
 	if aiming:
 		body.rotation.y = lerp_angle(body.rotation.y, cam_yaw, 10.0 * d)
 	elif speed > 0.2:

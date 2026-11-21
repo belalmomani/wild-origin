@@ -23,6 +23,11 @@ var livestock: Array = []      # animals being carried to the farm: {kind, eta(u
 var animals := {"deer": 0, "chicken": 0}   # arrived at the farm
 var barn_unlocked := false     # first live animal caught -> barn quest opens
 var barn_built := false
+var builds_done := 0           # finished builds since this save was first seen (each = +1% difficulty)
+var diff_base := -1            # builds that were already finished when difficulty started; -1 = not set yet
+var cost_acc := 0.0            # fractional piece cost carried over between pieces
+var farm_built := false
+var sens_idx := 1              # camera sensitivity: 0 low, 1 normal, 2 high
 var fire_fuel := 0.0           # game hours of fire left in the hearth
 var hearth_init := false       # the first fire has been lit (gift of 8 hours)
 var pen: Array = []             # animals housed at the barn (see barn_logic.gd)
@@ -43,6 +48,10 @@ func reset() -> void:
 	barn_built = false
 	fire_fuel = 0.0
 	hearth_init = false
+	builds_done = 0
+	diff_base = -1
+	cost_acc = 0.0
+	farm_built = false
 	pen = []
 	techs = []
 	next_pen_id = 1
@@ -110,7 +119,7 @@ func to_dict() -> Dictionary:
 	return {"v": 1, "inv": inv, "placed": placed.keys(), "removed": removed.keys(),
 		"pos": [player_pos.x, player_pos.y, player_pos.z], "t": time_of_day,
 		"hints": hints_left, "phase": phase, "xp": xp, "torch": torch_owned,
-		"clock": clock_hours, "weapons": weapons, "widx": weapon_idx, "livestock": livestock, "animals": animals, "pen": pen, "techs": techs, "npid": next_pen_id, "barn_u": barn_unlocked, "fuel": fire_fuel, "hinit": hearth_init, "crops": crops, "ncid": next_crop_id, "saved": Time.get_unix_time_from_system()}
+		"clock": clock_hours, "weapons": weapons, "widx": weapon_idx, "livestock": livestock, "animals": animals, "pen": pen, "techs": techs, "npid": next_pen_id, "barn_u": barn_unlocked, "fuel": fire_fuel, "dbase": diff_base, "cacc": cost_acc, "hinit": hearth_init, "crops": crops, "ncid": next_crop_id, "saved": Time.get_unix_time_from_system()}
 
 func from_dict(d: Dictionary) -> void:
 	reset()
@@ -143,6 +152,8 @@ func from_dict(d: Dictionary) -> void:
 	next_pen_id = int(d.get("npid", 1))
 	barn_unlocked = bool(d.get("barn_u", false))
 	fire_fuel = float(d.get("fuel", 0.0))
+	diff_base = int(d.get("dbase", -1))
+	cost_acc = float(d.get("cacc", 0.0))
 	hearth_init = bool(d.get("hinit", false))
 	next_crop_id = int(d.get("ncid", 1))
 	clock_hours = float(d.get("clock", 8.0))
@@ -185,10 +196,21 @@ func load_game() -> bool:
 	from_dict(data)
 	return true
 
+## Every finished build makes the following ones 1% harder (compounding): piece price and snap tolerance.
+func difficulty() -> float:
+	return pow(1.01, float(builds_done))
+
+func difficulty_pct() -> int:
+	return int(round((difficulty() - 1.0) * 100.0))
+
+func sens_mult() -> float:
+	var m: Array = [0.6, 1.0, 1.5]
+	return float(m[sens_idx])
+
 func save_settings() -> void:
 	var f := FileAccess.open(SETTINGS_PATH, FileAccess.WRITE)
 	if f:
-		f.store_string(JSON.stringify({"q": quality, "mute": muted, "tut": tutorial_done, "day": day_seconds, "gentle": gentle, "vol": volume_idx}))
+		f.store_string(JSON.stringify({"q": quality, "mute": muted, "tut": tutorial_done, "day": day_seconds, "gentle": gentle, "vol": volume_idx, "sens": sens_idx}))
 
 func load_settings() -> void:
 	if not FileAccess.file_exists(SETTINGS_PATH):
@@ -200,4 +222,5 @@ func load_settings() -> void:
 		tutorial_done = bool(data.get("tut", false))
 		gentle = bool(data.get("gentle", false))
 		volume_idx = clampi(int(data.get("vol", 0)), 0, 3)
+		sens_idx = clampi(int(data.get("sens", 1)), 0, 2)
 		day_seconds = clampf(float(data.get("day", 720.0)), 300.0, 5000.0)

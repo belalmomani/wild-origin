@@ -41,8 +41,11 @@ func _update_scale() -> void:
 	if not board.is_empty():
 		bscale = minf(board_rect.size.x / board.w, board_rect.size.y / board.h)
 
+var snap := 42.0     # drop tolerance in pixels (shrinks 1% per finished build)
+
 func open(b: Dictionary) -> void:
 	board = b
+	snap = clampf(42.0 * pow(0.99, float(GameState.builds_done)), 22.0, 42.0)   # each finished build: 1% less forgiving
 	selected = -1
 	scroll = 0
 	dragging = false
@@ -119,12 +122,12 @@ func _slot_center(pi: int) -> Vector2:
 	return c / pts.size()
 
 func _near(pi: int) -> bool:
-	return _held_center().distance_to(_slot_center(pi)) < 42.0
+	return _held_center().distance_to(_slot_center(pi)) < snap
 
 func info_text() -> String:
 	if board.is_empty():
 		return ""
-	return "%s — المتبقي %d من %d — خشب: %d | حجر: %d — تلميحات: %d" % [board.name, tray.size(), board.pieces.size(), GameState.count("wood"), GameState.count("stone"), GameState.hints_left]
+	return "%s — المتبقي %d من %d — خشب: %d | حجر: %d — تلميحات: %d — الصعوبة +%d%%" % [board.name, tray.size(), board.pieces.size(), GameState.count("wood"), GameState.count("stone"), GameState.hints_left, GameState.difficulty_pct()]
 
 func _to_screen(p: Vector2) -> Vector2:
 	var ox := board_rect.position.x + board_rect.size.x * 0.5

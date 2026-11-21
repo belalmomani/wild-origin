@@ -4,7 +4,7 @@ func _init() -> void:
 	var fails := 0
 	var D = load("res://scripts/building_data.gd")
 	var boards: Array = D.make_boards()
-	if boards.size() != 23:
+	if boards.size() != 29:
 		print("FAIL boards: ", boards.size()); fails += 1
 	if boards[2].pieces.size() != 50:
 		print("FAIL back facade should have 50 pieces: ", boards[2].pieces.size()); fails += 1
@@ -37,7 +37,7 @@ func _init() -> void:
 			var o: Vector3 = p.xf.origin
 			if absf(o.x) > 2.1 or o.z > 2.1 or o.z < -1.95 or o.y < 0.0 or o.y > 3.6:
 				print("FAIL interior piece outside the house ", p.id, " ", o); fails += 1
-			if p.get("door", false):
+			if str(p.get("door", "")) == "house":
 				door_pieces += 1
 	if interior != 9 or door_pieces < 15:
 		print("FAIL interior boards: ", interior, " door pieces ", door_pieces); fails += 1
@@ -54,6 +54,31 @@ func _init() -> void:
 				var cy: float = (p.xf.origin as Vector3).y
 				if absf(cx) < 0.55 and cy < 2.3:
 					print("FAIL piece left inside the widened doorway ", p.id); fails += 1
+	# gates + farm: every gate piece knows its hinge, all parts stay in their place, farm is clear of the house fence
+	var gate_pieces := 0
+	for b in boards:
+		var bid := str(b.id)
+		if bid != "G_fence" and not bid.begins_with("M_"):
+			continue
+		for p in b.pieces:
+			var o2: Vector3 = p.xf.origin
+			if bid == "G_fence" and (absf(o2.x) > 2.0 or absf(o2.z - 6.0) > 0.2):
+				print("FAIL fence gate piece misplaced ", p.id, " ", o2); fails += 1
+			if bid.begins_with("M_") and (o2.x < -19.3 or o2.x > -8.7 or absf(o2.z) > 5.3):
+				print("FAIL farm piece outside the farm ", p.id, " ", o2); fails += 1
+			if str(p.get("door", "")) != "":
+				gate_pieces += 1
+				if not p.has("hinge") or not p.has("leaf") or not p.has("angle"):
+					print("FAIL gate piece without hinge ", p.id); fails += 1
+	if gate_pieces < 50:
+		print("FAIL gate pieces: ", gate_pieces); fails += 1
+	# difficulty: +1% per finished build (a fresh instance: autoloads do not exist inside _init)
+	var gs = load("res://scripts/game_state.gd").new()
+	var d0: float = gs.difficulty()
+	gs.builds_done = 10
+	if absf(d0 - 1.0) > 0.0001 or absf(float(gs.difficulty()) - 1.1046) > 0.001 or int(gs.difficulty_pct()) != 10:
+		print("FAIL difficulty curve ", gs.difficulty()); fails += 1
+	gs.free()
 	print("pieces per board: ", boards.map(func(b): return b.pieces.size()))
 	var F = load("res://scripts/farm_logic.gd")
 	var c = F.new_crop(1, 0.0, 0.0, 0.0)

@@ -43,6 +43,7 @@ func _ready() -> void:
 	ui.set_sound_text(GameState.volume_idx)
 	ui.set_day_text(GameState.day_seconds)
 	ui.set_gentle_text(GameState.gentle)
+	ui.set_sens_text(GameState.sens_idx)
 	ui.show_menu(GameState.has_save())
 	_update_sky()
 	if OS.get_environment("WILD_SMOKE") == "1":
@@ -163,8 +164,20 @@ func _smoke() -> void:
 		print("SMOKE FAIL: interior wiring")
 		get_tree().quit(1)
 		return
-	if not home.interact(Vector3(0, 0, 3.0)) or not builder.door_open:
+	if not home.interact(Vector3(0, 0, 3.0)) or not builder.is_open("house"):
 		print("SMOKE FAIL: door interaction")
+		get_tree().quit(1)
+		return
+	if not home.interact(Vector3(0, 0, 8.0)) or not builder.is_open("fence"):
+		print("SMOKE FAIL: fence gate interaction")
+		get_tree().quit(1)
+		return
+	if not builder.farm_done() or not home.interact(Vector3(-6.5, 0, 0)) or not builder.is_open("farm"):
+		print("SMOKE FAIL: farm gate interaction")
+		get_tree().quit(1)
+		return
+	if GameState.builds_done < 5 or GameState.difficulty() <= 1.0:
+		print("SMOKE FAIL: difficulty does not grow: ", GameState.builds_done)
 		get_tree().quit(1)
 		return
 	var fuel0: float = GameState.fire_fuel
@@ -199,8 +212,14 @@ func _setup_env() -> void:
 	env.fog_enabled = true
 	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
 	env.adjustment_enabled = true
-	env.adjustment_contrast = 1.08
-	env.adjustment_saturation = 1.12
+	env.adjustment_contrast = 1.1
+	env.adjustment_saturation = 1.15
+	env.glow_enabled = true          # soft bloom on the lamp, fire and sun (ignored on renderers without glow)
+	env.glow_intensity = 0.7
+	env.glow_bloom = 0.04
+	env.glow_hdr_threshold = 0.85
+	env.fog_sun_scatter = 0.12       # warm haze toward the sun
+	env.tonemap_white = 5.0
 	var we := WorldEnvironment.new()
 	we.environment = env
 	add_child(we)
@@ -298,6 +317,12 @@ func _tutorial() -> void:
 func _apply_quality() -> void:
 	var q := GameState.quality
 	sun.shadow_enabled = q >= 1
+	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS if q == 2 else DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
+	sun.directional_shadow_max_distance = 100.0 if q == 2 else 60.0
+	sun.shadow_blur = 1.6 if q == 2 else 1.0
+	env.glow_enabled = q >= 1
+	if ui:
+		ui.vignette.visible = q >= 1 and playing
 	get_viewport().msaa_3d = Viewport.MSAA_2X if q == 2 else Viewport.MSAA_DISABLED
 	if world:
 		world.apply_quality(q)
@@ -346,6 +371,10 @@ func _on_action(a: String) -> void:
 		"scope": hunt.toggle_scope()
 		"weapon": hunt.cycle_weapon()
 		"speed": hunt.speedup()
+		"sens":
+			GameState.sens_idx = (GameState.sens_idx + 1) % 3
+			ui.set_sens_text(GameState.sens_idx)
+			GameState.save_settings()
 		"gentle":
 			GameState.gentle = not GameState.gentle
 			ui.set_gentle_text(GameState.gentle)
@@ -579,6 +608,10 @@ func _hud() -> void:
 		l.visible = night
 	home.set_night(night)
 	GameState.barn_built = GameState.barn_unlocked and builder.barn_done()
+	if builder.farm_done() and not GameState.farm_built:
+		ui.toast("اكتملت المزرعة! الأشجار داخلها تنمو أسرع بنسبة 25%", 4.0)
+	GameState.farm_built = builder.farm_done()
+	ui.set_prompt(_prompt())
 	var ct: String = farm.info_text(player.global_position)
 	if ct == "":
 		ct = barn.info_text(player.global_position)
@@ -589,6 +622,28 @@ func _hud() -> void:
 	ui.set_hunt(hunt.weapon_text() + ("\n" + tt if tt != "" else ""))
 	ui.set_speed_visible(tt != "")
 	ui.set_hud(res, q)
+
+## Hint for the interact button: what pressing it would do right here.
+func _prompt() -> String:
+	if player.intro_lock or ui.in_puzzle:
+		return ""
+	var pos: Vector3 = player.global_position
+	var h: String = home.hint(pos)
+	if h != "":
+		return h
+	var best = null
+	var bd := 3.2
+	for g in ["tree", "rock", "crop"]:
+		for n in get_tree().get_nodes_in_group(g):
+			var d: float = n.global_position.distance_to(pos)
+			if d < bd:
+				bd = d
+				best = n
+	if best == null:
+		return ""
+	if best.is_in_group("crop"):
+		return "تفاعل: اعتنِ بشجرة التفاح"
+	return "تفاعل: اقطع الشجرة" if best.is_in_group("tree") else "تفاعل: كسّر الصخرة"
 
 func _save() -> void:
 	if not playing:

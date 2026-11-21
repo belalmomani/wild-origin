@@ -7,6 +7,14 @@ const DOOR_C := Vector3(0, 0, 2.0)
 const BED_C := Vector3(-1.35, 0, -0.85)
 const HEARTH_C := Vector3(1.3, 0, -1.45)
 const LAMP_POS := Vector3(0, 2.33, 0)
+const FARM_C := Vector3(-14, 0, 0)  # fenced farm, west of the house (gate on its east side, facing the house)
+## Hinged doors / gates. board = puzzle board that builds it, c = centre, out = the side it swings to,
+## block = radius where closing is refused (the leaf would sweep through you), reach = interact distance.
+const DOORS := {
+	"house": {"board": "I_door", "c": Vector3(0, 0, 2.0), "out": Vector3(0, 0, 1), "block": 1.9, "reach": 2.6, "name": "الباب"},
+	"fence": {"board": "G_fence", "c": Vector3(0, 0, 6.0), "out": Vector3(0, 0, 1), "block": 2.9, "reach": 3.8, "name": "بوابة السور"},
+	"farm": {"board": "M_gate", "c": Vector3(-9, 0, 0), "out": Vector3(1, 0, 0), "block": 2.9, "reach": 3.8, "name": "بوابة المزرعة"},
+}
 
 static func piece_color(p: Dictionary) -> Color:
 	var h := absi(hash(p.id))
@@ -143,6 +151,7 @@ static func make_boards() -> Array:
 			op2 = [Rect2(-1.9, 0.0, 3.8, 1.3)]
 			leg2 = [Rect2(-0.8, 0.0, 1.6, 1.2)]
 		out.append(wall_board("S%d" % s, "السور %d من 4" % (s + 1), 11.0, 1.2, 6, 2, 0.5, "stone", b2, o + b2 * Vector3(0, 0, 6), op2, 200 + s, leg2))
+	out.append(gate_board("G_fence", "بوابة السور", "fence", Vector3(0, 0, 6.0), Basis.IDENTITY, 1.9, 1.1, 900))
 	# barn (unlocked after the first animal is caught): 4 plank walls + roof, same puzzle system
 	var bn := ["الحظيرة: الواجهة الأمامية (البوابة)", "الحظيرة: الجدار الأيمن", "الحظيرة: الجدار الخلفي", "الحظيرة: الجدار الأيسر"]
 	for k in 4:
@@ -153,6 +162,42 @@ static func make_boards() -> Array:
 		out.append(wall_board("B%d" % k, bn[k], 4.0, 2.4, 8, 4, 0.3, "wood", b3, BARN + b3 * Vector3(0, 0, 2), op3, 300 + k))
 	out.append(roof_board(BARN, "BROOF", "سقف الحظيرة"))
 	out.append_array(interior_boards())
+	out.append_array(farm_boards())
+	return out
+
+## Two-leaf gate built as one puzzle board. Each leaf hangs on its own hinge (local x = -half / +half) and swings outwards.
+static func gate_board(id: String, title: String, group: String, center: Vector3, b: Basis, half: float, h: float, seed_v: int) -> Dictionary:
+	var pieces: Array = []
+	for side in [-1, 1]:
+		var sd := float(side)
+		var leaf := "L" if side < 0 else "R"
+		var leaf_c := center + b * Vector3(sd * half * 0.5, 0.0, 0.0)
+		var lb := wall_board(id + leaf, title, half, h, 4, 3, 0.1, "wood", b, leaf_c, [], seed_v + (0 if side < 0 else 1))
+		var hinge := center + b * Vector3(sd * half, 0.0, 0.0)
+		var off := Vector2(sd * half * 0.5, 0.0)
+		for p in lb.pieces:
+			p["door"] = group
+			p["leaf"] = leaf
+			p["hinge"] = hinge
+			p["angle"] = 1.75 * sd
+			var np := PackedVector2Array()
+			for v in p["poly"]:
+				np.append(v + off)
+			p["poly"] = np
+			pieces.append(p)
+	return {"id": id, "name": title, "w": half * 2.0, "h": h, "pieces": pieces, "openings": []}
+
+## Farm: a closed 10x10 wooden fence west of the house, with a two-leaf gate on the side facing the house.
+static func farm_boards() -> Array:
+	var out: Array = []
+	var names := ["سور المزرعة: الجهة الجنوبية", "سور المزرعة: جهة المنزل (البوابة)", "سور المزرعة: الجهة الشمالية", "سور المزرعة: الجهة الغربية"]
+	for k in 4:
+		var b := Basis(Vector3.UP, deg_to_rad(k * 90.0))
+		var op: Array = []
+		if k == 1:
+			op = [Rect2(-1.2, 0.0, 2.4, 1.5)]
+		out.append(wall_board("M_S%d" % k, names[k], 10.0, 1.3, 6, 2, 0.2, "wood", b, FARM_C + b * Vector3(0, 0, 5), op, 800 + k))
+	out.append(gate_board("M_gate", "بوابة المزرعة", "farm", FARM_C + Basis(Vector3.UP, PI / 2.0) * Vector3(0, 0, 5), Basis(Vector3.UP, PI / 2.0), 1.7, 1.2, 950))
 	return out
 
 # ---------------------------------------------------------------- interior (phase 2)
@@ -251,7 +296,10 @@ static func interior_boards() -> Array:
 	# 1) door: same jigsaw as the walls; its pieces hang on a hinge (see building.gd) and swing open
 	var door := wall_board("I_door", "الباب", 1.5, 2.3, 5, 5, 0.1, W, Basis.IDENTITY, DOOR_C, [], 700)
 	for dp in door.pieces:
-		dp["door"] = true
+		dp["door"] = "house"
+		dp["leaf"] = "a"
+		dp["hinge"] = DOOR_HINGE
+		dp["angle"] = -1.75
 	out.append(door)
 	# 2) windows
 	out.append(_window_board("I_winR", "النافذة اليمنى", 1.0))
