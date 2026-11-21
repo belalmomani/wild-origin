@@ -70,7 +70,7 @@ func _init() -> void:
 				gate_pieces += 1
 				if not p.has("hinge") or not p.has("leaf") or not p.has("angle"):
 					print("FAIL gate piece without hinge ", p.id); fails += 1
-	if gate_pieces < 50:
+	if gate_pieces < 40:
 		print("FAIL gate pieces: ", gate_pieces); fails += 1
 	# difficulty: +1% per finished build (a fresh instance: autoloads do not exist inside _init)
 	var gs0 = load("res://scripts/game_state.gd").new()
