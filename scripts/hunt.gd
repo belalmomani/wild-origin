@@ -9,8 +9,14 @@ signal scope_changed(on: bool)
 const L := preload("res://scripts/hunt_logic.gd")
 const AnimalS := preload("res://scripts/animal.gd")
 const BL := preload("res://scripts/barn_logic.gd")
+const M := preload("res://scripts/mats.gd")
 var world
 var player
+var barn                    # set by main: where the dragged animal is delivered
+var drag_node: Node3D = null
+var drag_animal = null
+var drag_rope: MeshInstance3D = null
+var drag_busy := false
 var animals: Array = []
 var aiming := false
 var scoped := false
@@ -27,6 +33,8 @@ func _ready() -> void:
 	for i in 10:
 		_spawn("chicken")
 	Ads.reward_granted.connect(_on_reward)
+	if GameState.drag_kind != "":
+		_make_drag(GameState.drag_kind)
 
 func _spawn(kind: String) -> void:
 	var a := AnimalS.new()
@@ -49,6 +57,7 @@ func first_of(kind: String):
 
 func _process(d: float) -> void:
 	cooldown -= d
+	_update_drag(d)
 	for a in animals:
 		if is_instance_valid(a):
 			a.tick(d, player.global_position, player.crouch, world)
@@ -79,6 +88,11 @@ func _transit() -> void:
 			message.emit("وصل %s إلى الحظيرة ✓" % L.ANIMALS[k]["name"])
 
 func transit_text() -> String:
+	if drag_node != null:
+		var left := 0.0
+		if barn != null:
+			left = Vector2(drag_node.global_position.x - barn.center.x, drag_node.global_position.z - barn.center.z).length()
+		return "تجرّ غزالًا إلى الحظيرة — تبقّى %d م" % int(left)
 	if GameState.livestock.is_empty():
 		return ""
 	var e: Dictionary = GameState.livestock[0]
@@ -93,6 +107,8 @@ func weapon_text() -> String:
 
 func toggle_aim() -> void:
 	aiming = not aiming
+	if aiming:
+		GameState.equip = "weapon"
 	if not aiming and scoped:
 		_set_scope(false)
 	player.set_aim(aiming)
@@ -247,6 +263,8 @@ func interact_nearby() -> bool:
 		return false
 	if best.dead:
 		_loot(best)
+	elif best.kind == "deer":
+		_start_drag(best)
 	else:
 		GameState.livestock.append({"kind": best.kind, "eta": Time.get_unix_time_from_system() + L.TRANSIT_SECONDS})
 		message.emit("التقطتَ %s. رحلة النقل إلى المزرعة 3 دقائق." % L.ANIMALS[best.kind]["name"])
@@ -257,3 +275,120 @@ func interact_nearby() -> bool:
 		best.queue_free()
 		GameState.xp += 2
 	return true
+
+# ---------------------------------------------------------------- dragging a caught deer to the barn
+const SLED_WOOD := 8
+const ROPE_LEN := 2.6
+const DRAG_SPEED := 0.42        # walking speed while pulling the sled
+
+## A wounded deer caught by hand: build a sled (wood) + rope, tie the deer onto it and drag it to the barn.
+func _start_drag(a) -> void:
+	if drag_node != null:
+		message.emit("أنت تجرّ غزالًا بالفعل — أوصله إلى الحظيرة أولًا")
+		return
+	if not GameState.spend("wood", SLED_WOOD):
+		message.emit("لجرّ الغزال تحتاج زلاجة وحبلًا: اقطع %d قطع خشب ثم عُد إليه" % SLED_WOOD)
+		return
+	animals.erase(a)
+	a.queue_free()
+	GameState.drag_kind = "deer"
+	GameState.xp += 2
+	_make_drag("deer")
+	message.emit("صنعتَ زلاجة وربطتَ الغزال بالحبل (-%d خشب). اسحبه إلى الحظيرة — الجرّ بطيء" % SLED_WOOD)
+	if not GameState.barn_unlocked:
+		GameState.barn_unlocked = true
+		message.emit("فُتحت مهمة بناء الحظيرة! اضغط «بناء».")
+
+func _make_drag(kind: String) -> void:
+	var wood := M.pbr("bark", Color(0.9, 0.8, 0.65), 1.5, 0.9)
+	var rope_m := M.flat(Color(0.75, 0.62, 0.38), 0.9)
+	drag_node = Node3D.new()
+	add_child(drag_node)
+	var back := Vector3(0, 0, ROPE_LEN).rotated(Vector3.UP, player.body.rotation.y)
+	var p: Vector3 = player.global_position + back
+	drag_node.global_position = Vector3(p.x, world.height_at(p.x, p.z), p.z)
+	drag_node.rotation.y = player.body.rotation.y
+	for sx in [-0.28, 0.28]:                       # two runners + planks
+		var r := MeshInstance3D.new()
+		var rb := BoxMesh.new()
+		rb.size = Vector3(0.08, 0.08, 2.0)
+		r.mesh = rb
+		r.material_override = wood
+		r.position = Vector3(sx, 0.06, 0)
+		drag_node.add_child(r)
+	for i in 5:
+		var pl := MeshInstance3D.new()
+		var pb := BoxMesh.new()
+		pb.size = Vector3(0.78, 0.05, 0.28)
+		pl.mesh = pb
+		pl.material_override = wood
+		pl.position = Vector3(0, 0.13, -0.78 + i * 0.39)
+		drag_node.add_child(pl)
+	drag_animal = AnimalS.new()
+	drag_animal.setup(kind, 7)
+	drag_animal.tame = true
+	for c in drag_animal.get_children():
+		if c is Area3D:
+			(c as Area3D).collision_layer = 0
+	drag_animal.rotation = Vector3(0, 0, PI / 2.0)       # lying on its side, head toward the rope (-Z)
+	drag_animal.position = Vector3(1.0, 0.42, 0.0)
+	drag_node.add_child(drag_animal)
+	var strap := MeshInstance3D.new()                   # rope band holding it down
+	var sb := BoxMesh.new()
+	sb.size = Vector3(0.9, 0.04, 0.05)
+	strap.mesh = sb
+	strap.material_override = rope_m
+	strap.position = Vector3(0, 0.62, 0.1)
+	drag_node.add_child(strap)
+	drag_rope = MeshInstance3D.new()
+	var rb2 := BoxMesh.new()
+	rb2.size = Vector3(0.03, 0.03, 1.0)
+	drag_rope.mesh = rb2
+	drag_rope.material_override = rope_m
+	drag_rope.top_level = true
+	add_child(drag_rope)
+	player.speed_mult = DRAG_SPEED
+
+func _update_drag(d: float) -> void:
+	if drag_node == null or drag_busy:
+		return
+	var pp: Vector3 = player.global_position
+	var dp: Vector3 = drag_node.global_position
+	var v := Vector3(pp.x - dp.x, 0, pp.z - dp.z)
+	var dist := v.length()
+	if dist > ROPE_LEN:
+		dp += v.normalized() * (dist - ROPE_LEN)
+	dp.y = world.height_at(dp.x, dp.z)
+	drag_node.global_position = dp
+	if dist > 0.3:
+		drag_node.rotation.y = lerp_angle(drag_node.rotation.y, atan2(-v.x, -v.z), 6.0 * d)
+	# the rope runs from the player's hands to the front of the sled
+	var a := pp + Vector3(0, 0.95, 0)
+	var front: Vector3 = drag_node.global_transform * Vector3(0, 0.2, -1.0)
+	var ln := a.distance_to(front)
+	if ln > 0.05:
+		(drag_rope.mesh as BoxMesh).size = Vector3(0.03, 0.03, ln)
+		drag_rope.global_position = (a + front) * 0.5
+		drag_rope.look_at(front, Vector3.UP)
+	if barn != null and GameState.barn_built and Vector2(dp.x - barn.center.x, dp.z - barn.center.z).length() < 6.0:
+		_deliver_drag()
+
+func _deliver_drag() -> void:
+	drag_busy = true
+	message.emit("وصلتَ الحظيرة — تربط الغزال بالحبل...")
+	player.speed_mult = 1.0
+	await get_tree().create_timer(2.5).timeout
+	var k := GameState.drag_kind
+	GameState.drag_kind = ""
+	GameState.pen.append(BL.new_animal(GameState.next_pen_id, k, GameState.clock_hours / 24.0))
+	GameState.next_pen_id += 1
+	if is_instance_valid(drag_node):
+		drag_node.queue_free()
+	if is_instance_valid(drag_rope):
+		drag_rope.queue_free()
+	drag_node = null
+	drag_rope = null
+	drag_animal = null
+	drag_busy = false
+	message.emit("ربطتَ الغزال ووضعتَه في الحظيرة ✓")
+	GameState.xp += 4

@@ -16,6 +16,7 @@ var coyote := 0.0        # ...and one pressed just after walking off an edge
 var look_pending := Vector2.ZERO   # camera drag not applied yet (smoothing)
 var crouch := false
 var action := ""
+var speed_mult := 1.0          # < 1 while dragging a deer on the sled
 var action_left := 0.0
 var carry_t := 0.0
 var intro_lock := false
@@ -184,7 +185,7 @@ func _physics_process(d: float) -> void:
 		carry_t -= d
 	var locked := intro_lock or action != ""
 	var m := GameState.move if not locked else Vector2.ZERO
-	var top := (CROUCH_SPEED if crouch else SPEED) * (0.5 if aiming else 1.0)
+	var top := (CROUCH_SPEED if crouch else SPEED) * (0.5 if aiming else 1.0) * speed_mult
 	if not intro_lock:
 		var k := clampf(8.0 * d, 0.0, 1.0)
 		arm.spring_length = lerpf(arm.spring_length, 0.25 if scoped else (2.3 if aiming else 4.2), k)
@@ -226,6 +227,7 @@ func _physics_process(d: float) -> void:
 		_hero_anim(spd)
 	elif char_node:
 		char_node.set_weapon(GameState.weapons[GameState.weapon_idx])
+		char_node.set_equip(GameState.equip)
 		char_node.animate(d, spd, is_on_floor(), velocity.y, crouch, action if action != "" else ("aim" if aiming else ""), carry_t > 0.0, turn_s)
 		char_node.set_carrying(carry_t > 0.0)
 	position.x = clampf(position.x, -96.0, 96.0)

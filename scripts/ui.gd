@@ -115,7 +115,7 @@ func _ready() -> void:
 	stick_base = _circle(180, Color(1, 1, 1, 0.18))
 	stick_knob = _circle(80, Color(1, 1, 1, 0.45))
 	for n in [["new", "لعبة جديدة", "menu"], ["continue", "متابعة اللعبة", "menu"], ["quality", "الجودة", "menu"], ["sound", "الصوت", "menu"], ["day", "مدة اليوم", "menu"], ["gentle", "تخفيف المشاهد", "menu"], ["sens", "الحساسية", "menu"],
-			["jump", "قفز", "hud"], ["interact", "تفاعل", "hud"], ["build", "بناء", "hud"], ["torch", "مشعل", "hud"], ["crouch", "انحناء", "hud"], ["plant", "زرع", "hud"], ["water", "سقي", "hud"], ["tech", "تقنيات", "hud"], ["tresearch", "تطوير", "tech"], ["tclose", "إغلاق", "tech"], ["tup", "▲", "tech"], ["tdown", "▼", "tech"], ["aim", "تصويب", "hud"], ["weapon", "سلاح", "hud"], ["speed", "تسريع", "special"], ["scope", "عدسة", "special"], ["fire", "إطلاق", "special"], ["save", "حفظ", "hud"],
+			["jump", "قفز", "hud"], ["interact", "تفاعل", "hud"], ["build", "بناء", "hud"], ["torch", "مشعل", "hud"], ["crouch", "انحناء", "hud"], ["plant", "زرع", "hud"], ["water", "سقي", "hud"], ["tech", "تقنيات", "hud"], ["tresearch", "تطوير", "tech"], ["tclose", "إغلاق", "tech"], ["tup", "▲", "tech"], ["tdown", "▼", "tech"], ["aim", "تصويب", "hud"], ["weapon", "سلاح", "hud"], ["speed", "تسريع", "special"], ["scope", "عدسة", "special"], ["fire", "إطلاق", "special"], ["save", "حفظ", "hud"], ["home", "🏠 المنزل", "hud"],
 			["hint", "تلميح", "puzzle"], ["pnext", "لوحة أخرى ▸", "puzzle"], ["pclose", "إغلاق", "puzzle"], ["pleft", "◀", "puzzle"], ["pright", "▶", "puzzle"]]:
 		_btn(n[0], n[1], n[2])
 	get_viewport().size_changed.connect(_layout)
@@ -190,17 +190,17 @@ func _layout() -> void:
 	hunt_label.size = Vector2(vp.x, 30)
 	crosshair.position = Vector2(vp.x * 0.5 - 30.0, vp.y * 0.5 - 38.0)
 	crosshair.size = Vector2(60, 60)
-	_put("tech", Vector2(vp.x - 600, vp.y - 220), Vector2(130, 100))
+	_put("tech", Vector2(vp.x - 150, 10), Vector2(130, 60))
 	_put("tresearch", Vector2(vp.x / 2.0 - 170.0, vp.y - 110.0), Vector2(340, 90))
 	_put("tclose", Vector2(20, vp.y - 110.0), Vector2(160, 90))
 	_put("tup", Vector2(vp.x - 200.0, vp.y - 110.0), Vector2(80, 90))
 	_put("tdown", Vector2(vp.x - 100.0, vp.y - 110.0), Vector2(80, 90))
 	tech.layout(vp)
-	_put("aim", Vector2(vp.x - 320, vp.y - 340), Vector2(130, 100))
-	_put("weapon", Vector2(vp.x - 600, vp.y - 110), Vector2(130, 100))
+	_put("aim", Vector2(vp.x - 650, vp.y - 130), Vector2(130, 110))
+	_put("weapon", Vector2(vp.x - 510, vp.y - 250), Vector2(130, 100))
 	_put("speed", Vector2(20, 84), Vector2(170, 64))
-	_put("fire", Vector2(vp.x - 170, vp.y - 410), Vector2(140, 120))
-	_put("scope", Vector2(vp.x - 330, vp.y - 410), Vector2(140, 120))
+	_put("fire", Vector2(vp.x - 230, vp.y - 455), Vector2(210, 140))
+	_put("scope", Vector2(vp.x - 370, vp.y - 445), Vector2(130, 120))
 	scope_img.position = Vector2((vp.x - vp.y) * 0.5, 0)
 	scope_img.size = Vector2(vp.y, vp.y)
 	bar_l.position = Vector2.ZERO
@@ -209,14 +209,16 @@ func _layout() -> void:
 	bar_r.size = bar_l.size
 	crop_label.position = Vector2(0, 96)
 	crop_label.size = Vector2(vp.x, 70)
-	_put("plant", Vector2(vp.x - 460, vp.y - 220), Vector2(130, 100))
-	_put("water", Vector2(vp.x - 460, vp.y - 330), Vector2(130, 100))
-	_put("jump", Vector2(vp.x - 160, vp.y - 160), Vector2(130, 130))
-	_put("interact", Vector2(vp.x - 300, vp.y - 110), Vector2(130, 100))
-	_put("build", Vector2(vp.x - 170, vp.y - 280), Vector2(140, 100))
-	_put("torch", Vector2(vp.x - 320, vp.y - 230), Vector2(130, 100))
-	_put("crouch", Vector2(vp.x - 460, vp.y - 110), Vector2(130, 100))
+	# right-hand cluster, tidy grid: big «تفاعل» at the corner, jump/crouch beside it, the rest in rows above
+	_put("interact", Vector2(vp.x - 230, vp.y - 170), Vector2(210, 150))
+	_put("jump", Vector2(vp.x - 370, vp.y - 130), Vector2(130, 110))
+	_put("crouch", Vector2(vp.x - 370, vp.y - 250), Vector2(130, 100))
+	_put("build", Vector2(vp.x - 230, vp.y - 282), Vector2(210, 100))
+	_put("torch", Vector2(vp.x - 510, vp.y - 130), Vector2(130, 110))
+	_put("plant", Vector2(vp.x - 650, vp.y - 250), Vector2(130, 100))
+	_put("water", Vector2(vp.x - 650, vp.y - 360), Vector2(130, 100))
 	_put("save", Vector2(20, 10), Vector2(110, 60))
+	_put("home", Vector2(140, 10), Vector2(170, 60))
 	bar_top.position = Vector2.ZERO
 	bar_top.size = Vector2(vp.x, vp.y * 0.12)
 	bar_bot.position = Vector2(0, vp.y * 0.88)
@@ -279,6 +281,9 @@ func _set_mode() -> void:
 	if in_menu or in_puzzle or in_tech:
 		prompt_label.visible = false
 	_special()
+
+func set_equip_text(e: String, weapon_name: String) -> void:
+	buttons["weapon"].text = {"none": "يدان فارغتان", "axe": "فأس", "weapon": weapon_name}[e]
 
 func set_sens_text(idx: int) -> void:
 	buttons["sens"].text = "الحساسية: " + ["منخفضة", "متوسطة", "عالية"][idx]

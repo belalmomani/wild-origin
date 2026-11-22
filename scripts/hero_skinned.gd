@@ -125,7 +125,7 @@ func set_scoped(on: bool) -> void:
 		xbow_scope.visible = on
 
 func _update_weapons(aiming: bool, carrying: bool, action: String, k: float) -> void:
-	var held := not carrying and action != "chop" and action != "gather" and action != "build"
+	var held := (equip == "weapon" or aiming) and not carrying and action != "chop" and action != "gather" and action != "build"
 	w_sling.visible = held and weapon == "slingshot"
 	w_bow.visible = held and weapon == "bow"
 	w_xbow.visible = held and weapon == "crossbow"
@@ -378,7 +378,7 @@ func animate(d: float, spd: float, on_floor: bool, vy: float, crouch: bool, acti
 	var dy := ((J["hips"] as Node3D).position.y - 0.95) * 1.25
 	skel.set_bone_pose_position(idx["hips"], Vector3(0, maxf(0.42, rest_hips_y + dy), 0))
 	# what is in the hand: work tool during chop / gather / build, otherwise the SELECTED WEAPON
-	tool_axe.visible = action == "chop"
+	tool_axe.visible = action == "chop" or (equip == "axe" and not carrying and action != "gather" and action != "build")
 	tool_pick.visible = action == "gather"
 	tool_hammer.visible = action == "build"
 	_update_weapons(action == "aim", carrying, action, clampf(d * 10.0, 0.0, 1.0))

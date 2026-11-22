@@ -10,6 +10,10 @@ var stone: Node3D
 var axe: Node3D
 signal footstep
 var weapon := "slingshot"
+var equip := "none"
+
+func set_equip(e: String) -> void:
+	equip = e
 var walk_w := 0.0
 var prev_cs := 1.0
 var was_air := false
@@ -220,8 +224,8 @@ func animate(d: float, spd: float, on_floor: bool, vy: float, crouch: bool, acti
 	var shift := sin(t * 0.45)                                   # slow weight shift between the legs
 	var idle := {"spine": Vector3(sin(t * 1.6) * 0.012, 0, shift * 0.02), "head": Vector3(sin(t * 0.7) * 0.03, sin(t * 0.45) * 0.1, -shift * 0.02),
 		"hips": Vector3(0, 0, shift * 0.025), "hipL": Vector3(0, 0, -0.045), "hipR": Vector3(0, 0, 0.045), "knL": Vector3(-0.05 * maxf(0.0, shift), 0, 0), "knR": Vector3(-0.05 * maxf(0.0, -shift), 0, 0),
-		"shL": Vector3(0.03, 0, 0.09 + sin(t * 1.6) * 0.012), "shR": Vector3(0.03, 0, -0.09 - sin(t * 1.6) * 0.012),
-		"elL": Vector3(0.18, 0, 0), "elR": Vector3(0.18, 0, 0)}
+		"shL": Vector3(-0.03, 0, 0.09 + sin(t * 1.6) * 0.012), "shR": Vector3(-0.03, 0, -0.09 - sin(t * 1.6) * 0.012),
+		"elL": Vector3(0.1, 0, 0), "elR": Vector3(0.1, 0, 0)}
 	var A := lerpf(0.28, 0.42, clampf(spd / 2.2, 0.0, 1.0)) + 0.33 * t_run      # hip swing
 	var K := 0.9 + 0.6 * t_run                                                 # swing-phase knee flexion
 	var arm := 0.30 + 0.35 * t_run
@@ -241,6 +245,17 @@ func animate(d: float, spd: float, on_floor: bool, vy: float, crouch: bool, acti
 		if not walk.has(key):
 			tg[key] = idle[key]
 	hip_y = lerpf(0.95 + sin(t * 1.6) * 0.004, 0.95 - (0.02 + 0.035 * t_run) * (1.0 - absf(cs)), walk_w)
+	# --- hands: empty hands hang relaxed at the sides; a held axe / weapon is carried bent at the right side ---
+	if action == "" and not carrying:
+		var hold := equip != "none"
+		var rest_r := Vector3(0.45, 0, -0.12) if hold else Vector3(-0.04, 0, -0.09)
+		var rest_re := Vector3(0.85, 0, 0) if hold else Vector3(0.1, 0, 0)
+		var rest_l := Vector3(-0.04, 0, 0.09)
+		var rest_le := Vector3(0.1, 0, 0)
+		tg["shL"] = rest_l.lerp(tg["shL"], walk_w * 0.8)
+		tg["elL"] = rest_le.lerp(tg["elL"], walk_w * 0.8)
+		tg["shR"] = rest_r.lerp(tg["shR"], walk_w * (0.4 if hold else 0.8))
+		tg["elR"] = rest_re.lerp(tg["elR"], walk_w * (0.4 if hold else 0.8))
 	# --- jump: push-off -> flight -> landing, blended by vertical speed (no pops between poses) ---
 	if not on_floor:
 		was_air = true
@@ -377,4 +392,4 @@ func animate(d: float, spd: float, on_floor: bool, vy: float, crouch: bool, acti
 		var behind := maxf(0.0, -sw * sgn)        # leg behind the body -> toe-off (toes down)
 		var ahead := maxf(0.0, sw * sgn)          # leg ahead -> heel strike (toes up)
 		an.rotation.x = clampf(-(h.rotation.x + kn.rotation.x) * 0.8 - 0.35 * behind * walk_w + 0.14 * pow(ahead, 3.0) * walk_w, -0.9, 0.9)
-	axe.visible = not carrying or action == "chop"
+	axe.visible = action == "chop" or (equip == "axe" and not carrying and action != "gather" and action != "build")

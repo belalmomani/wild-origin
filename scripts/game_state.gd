@@ -7,7 +7,12 @@ var inv := {"wood": 0, "stone": 0, "seeds": 2, "apples": 0, "arrows": 15, "meat"
 var clock_hours := 8.0        # total game hours (time_of_day = clock_hours mod 24)
 var crops: Array = []
 var next_crop_id := 1
-var day_seconds := 720.0       # real seconds per game day (12 min); setting
+var day_seconds := 1440.0      # real seconds per game day (24 min); setting
+const NIGHT_START := 21.0       # the day is long (05:00-21:00), the night short
+const NIGHT_END := 5.0
+
+func is_night() -> bool:
+	return time_of_day < NIGHT_END or time_of_day >= NIGHT_START
 var placed := {}      # slot id -> true
 var removed := {}     # harvested world object id -> true
 var player_pos := Vector3(0, 1, 11)
@@ -16,6 +21,8 @@ var hints_left := 3
 var phase := 0
 var xp := 0
 var torch_owned := false
+var drag_kind := ""            # animal currently being dragged to the barn ("" = none)
+var equip := "none"           # what the hands hold: "none" | "axe" | "weapon"
 var saved_unix := 0.0
 var weapons: Array = ["slingshot"]
 var weapon_idx := 0
@@ -48,6 +55,8 @@ func reset() -> void:
 	barn_built = false
 	fire_fuel = 0.0
 	hearth_init = false
+	drag_kind = ""
+	equip = "none"
 	builds_done = 0
 	diff_base = -1
 	cost_acc = 0.0
@@ -119,7 +128,7 @@ func to_dict() -> Dictionary:
 	return {"v": 1, "inv": inv, "placed": placed.keys(), "removed": removed.keys(),
 		"pos": [player_pos.x, player_pos.y, player_pos.z], "t": time_of_day,
 		"hints": hints_left, "phase": phase, "xp": xp, "torch": torch_owned,
-		"clock": clock_hours, "weapons": weapons, "widx": weapon_idx, "livestock": livestock, "animals": animals, "pen": pen, "techs": techs, "npid": next_pen_id, "barn_u": barn_unlocked, "fuel": fire_fuel, "dbase": diff_base, "cacc": cost_acc, "hinit": hearth_init, "crops": crops, "ncid": next_crop_id, "saved": Time.get_unix_time_from_system()}
+		"clock": clock_hours, "weapons": weapons, "widx": weapon_idx, "livestock": livestock, "animals": animals, "pen": pen, "techs": techs, "npid": next_pen_id, "barn_u": barn_unlocked, "fuel": fire_fuel, "dbase": diff_base, "cacc": cost_acc, "hinit": hearth_init, "drag": drag_kind, "crops": crops, "ncid": next_crop_id, "saved": Time.get_unix_time_from_system()}
 
 func from_dict(d: Dictionary) -> void:
 	reset()
@@ -155,6 +164,7 @@ func from_dict(d: Dictionary) -> void:
 	diff_base = int(d.get("dbase", -1))
 	cost_acc = float(d.get("cacc", 0.0))
 	hearth_init = bool(d.get("hinit", false))
+	drag_kind = str(d.get("drag", ""))
 	next_crop_id = int(d.get("ncid", 1))
 	clock_hours = float(d.get("clock", 8.0))
 	time_of_day = fposmod(clock_hours, 24.0)
@@ -170,28 +180,39 @@ func from_dict(d: Dictionary) -> void:
 	xp = int(d.get("xp", 0))
 	torch_owned = bool(d.get("torch", false))
 
-func has_save() -> bool:
-	return FileAccess.file_exists(SAVE_PATH)
+const SAVE_BAK := "user://save.bak"
 
-func save_game() -> bool:
-	# write to a temp file first so a crash never corrupts the save
-	var tmp := "user://save.tmp"
-	var f := FileAccess.open(tmp, FileAccess.WRITE)
+func has_save() -> bool:
+	return FileAccess.file_exists(SAVE_PATH) or FileAccess.file_exists(SAVE_BAK)
+
+func _write(path: String, text: String) -> bool:
+	var f := FileAccess.open(path, FileAccess.WRITE)
 	if f == null:
 		return false
-	f.store_string(JSON.stringify(to_dict()))
+	f.store_string(text)
 	f.close()
-	var dir := DirAccess.open("user://")
-	if dir.file_exists("save.json"):
-		dir.remove("save.json")
-	return dir.rename("save.tmp", "save.json") == OK
+	return FileAccess.file_exists(path) and FileAccess.get_file_as_string(path).length() == text.length()
+
+## Writes the main save and a backup copy (a failed/aborted write of one never loses the other).
+func save_game() -> bool:
+	var text := JSON.stringify(to_dict())
+	var ok1 := _write(SAVE_PATH, text)
+	var ok2 := _write(SAVE_BAK, text)
+	if not (ok1 or ok2):
+		push_error("save failed: " + str(FileAccess.get_open_error()))
+	return ok1 or ok2
+
+func _read_save(path: String):
+	if not FileAccess.file_exists(path):
+		return null
+	var data = JSON.parse_string(FileAccess.get_file_as_string(path))
+	return data if typeof(data) == TYPE_DICTIONARY else null
 
 func load_game() -> bool:
-	if not has_save():
-		return false
-	var f := FileAccess.open(SAVE_PATH, FileAccess.READ)
-	var data = JSON.parse_string(f.get_as_text())
-	if typeof(data) != TYPE_DICTIONARY:
+	var data = _read_save(SAVE_PATH)
+	if data == null:
+		data = _read_save(SAVE_BAK)
+	if data == null:
 		return false
 	from_dict(data)
 	return true
@@ -210,7 +231,7 @@ func sens_mult() -> float:
 func save_settings() -> void:
 	var f := FileAccess.open(SETTINGS_PATH, FileAccess.WRITE)
 	if f:
-		f.store_string(JSON.stringify({"q": quality, "mute": muted, "tut": tutorial_done, "day": day_seconds, "gentle": gentle, "vol": volume_idx, "sens": sens_idx}))
+		f.store_string(JSON.stringify({"q": quality, "mute": muted, "tut": tutorial_done, "day2": day_seconds, "gentle": gentle, "vol": volume_idx, "sens": sens_idx}))
 
 func load_settings() -> void:
 	if not FileAccess.file_exists(SETTINGS_PATH):
@@ -223,4 +244,4 @@ func load_settings() -> void:
 		gentle = bool(data.get("gentle", false))
 		volume_idx = clampi(int(data.get("vol", 0)), 0, 3)
 		sens_idx = clampi(int(data.get("sens", 1)), 0, 2)
-		day_seconds = clampf(float(data.get("day", 720.0)), 300.0, 5000.0)
+		day_seconds = clampf(float(data.get("day2", 1440.0)), 300.0, 5000.0)

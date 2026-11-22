@@ -11,7 +11,7 @@ as a 20 / 80 / 320-triangle icosphere, and the parts are merged per bone. Output
 Bone layout follows tools/blender/rig_deer.py and build_nubian_ibex_rig.py. A few joint pivots are corrected where the
 Blender scripts put them in the middle of a leg segment.
 """
-import json, os, struct, sys
+import json, os, struct, sys, zlib
 import numpy as np
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -115,7 +115,7 @@ def regen_ellipsoid(P):
     if res > 0.02:
         return None
     m = float(ext.max())
-    level = 2 if m > 0.22 else (1 if m > 0.05 else 0)
+    level = 3 if m > 0.45 else (2 if m > 0.22 else (1 if m > 0.05 else 0))
     U, F = icosphere(level)
     pts = c + (U * ext) @ R.T
     nrm = (U / ext) @ R.T
@@ -142,6 +142,18 @@ def part_mesh(part):
     pts, nrm, F = r
     col = np.tile(part["C"][0], (len(pts), 1))
     return pts, nrm, col, F
+
+
+def shade(col, nrm_game, pts_game, seed):
+    """Bake soft lighting into vertex colours so the models read as volumes: darker undersides / inner legs,
+    lighter backs, plus a little per-vertex fur variation."""
+    rng = np.random.default_rng(seed)
+    up = nrm_game[:, 1]
+    k = 0.66 + 0.34 * np.clip(up * 0.5 + 0.5, 0, 1) ** 0.8
+    k = k * (1.0 + rng.normal(0, 0.035, len(col)))
+    # lower parts of the body (close to the ground) sit in shadow
+    k = k * (0.86 + 0.14 * np.clip(pts_game[:, 1] / 0.8, 0, 1))
+    return np.clip(col * k[:, None], 0, 1)
 
 
 # ------------------------------------------------------------------ animal definitions (model axes)
@@ -249,6 +261,7 @@ def build(name, cfg):
     order = list(bones_m.keys())
     groups = {k: {"v": [], "n": [], "c": [], "i": [], "off": 0} for k in order}
     tot_tris = 0
+    cross = {}
     zone_pts = {"head": [], "body": [], "legs": []}
     for part in parts:
         centre = (part["P"].max(0) + part["P"].min(0)) / 2
@@ -262,6 +275,9 @@ def build(name, cfg):
         avg = g_nrm[F].sum(axis=1)
         flip = (gn * avg).sum(axis=1) > 0
         F = np.where(flip[:, None], F[:, [0, 2, 1]], F)
+        col = shade(col, g_nrm, g_pts, zlib.crc32(part["name"].encode()) % 100000)
+        ext = np.sort((part["P"].max(0) - part["P"].min(0)) / 2.0)
+        cross.setdefault(bone, []).append((float(ext[1]) * SCALE, part["C"][0]))
         grp = groups[bone]
         grp["v"].append(g_pts - head_g[bone])
         grp["n"].append(g_nrm)
@@ -272,6 +288,32 @@ def build(name, cfg):
         zk = "head" if bone in ("head",) else ("legs" if bone[1:3] in ("l_", "r_") and bone[0] in "fh" else ("body" if bone in ("spine", "chest", "neck", "pelvis") else None))
         if zk:
             zone_pts[zk].append(g_pts)
+    # joint balls: the ellipsoid segments only touch in points, so a swinging leg would open gaps. A ball centred on
+    # every leg pivot (child bone) keeps hip / knee / ankle visibly connected.
+    U1, F1 = icosphere(1)
+    for bone, (par, _h) in bones_m.items():
+        if len(bone) < 5 or bone[0] not in "fh" or bone[1] not in "lr" or bone[2] != "_":
+            continue
+        mine = max(cross.get(bone, [(0.03, np.array([0.5, 0.4, 0.3]))]), key=lambda t: t[0])
+        r = mine[0]
+        if bone.endswith("_lo") or bone.endswith("_ft"):
+            theirs = cross.get(par, [])
+            if theirs:
+                r = (r + max(theirs, key=lambda t: t[0])[0]) * 0.5
+        r = max(r * 1.08, 0.025)
+        nrm = U1
+        col = shade(np.tile(mine[1], (len(U1), 1)), nrm, U1 * r + head_g[bone], 7)
+        g = groups[bone]
+        tri = (U1 * r)[F1]              # Godot wants clockwise-from-outside: flip faces whose normal points outward
+        gn = np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0])
+        flip = (gn * U1[F1].sum(axis=1)).sum(axis=1) > 0
+        F = np.where(flip[:, None], F1[:, [0, 2, 1]], F1)
+        g["v"].append(U1 * r)
+        g["n"].append(nrm)
+        g["c"].append(col)
+        g["i"].append(F + g["off"])
+        g["off"] += len(U1)
+        tot_tris += len(F1)
     zones = {}
     for k, lst in zone_pts.items():
         allp = np.concatenate(lst)

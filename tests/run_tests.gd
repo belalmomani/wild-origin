@@ -205,7 +205,7 @@ func _init() -> void:
 					print("FAIL ", k, " index out of range ", mk); fails += 1
 					break
 			tris += m["i"].size() / 3
-		if tris < 1000 or tris > 9000:
+		if tris < 1000 or tris > 14000:
 			print("FAIL ", k, " triangle count ", tris); fails += 1
 		for z in ["head", "body", "legs"]:
 			if not ad["zones"].has(z):

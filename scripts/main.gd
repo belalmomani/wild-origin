@@ -1,6 +1,7 @@
 extends Node3D
 ## Entry point: menu -> world/player/builder, day-night cycle, quests, save/load, quality.
 const WorldS := preload("res://scripts/world.gd")
+const HuntLogic := preload("res://scripts/hunt_logic.gd")
 const PlayerS := preload("res://scripts/player.gd")
 const UIS := preload("res://scripts/ui.gd")
 const BuildS := preload("res://scripts/building.gd")
@@ -95,6 +96,21 @@ func _smoke() -> void:
 		print("SMOKE FAIL: ibex kill/loot")
 		get_tree().quit(1)
 		return
+	var dd = hunt.first_of("deer")
+	GameState.add("wood", 8)
+	hunt.apply_hit(dd, "legs")
+	dd.global_position = player.global_position + Vector3(0, 0, -1)
+	if not dd.wounded or not hunt.interact_nearby() or hunt.drag_node == null or GameState.drag_kind != "deer":
+		print("SMOKE FAIL: deer drag start")
+		get_tree().quit(1)
+		return
+	hunt._update_drag(0.1)
+	player.speed_mult = 1.0
+	GameState.drag_kind = ""
+	hunt.drag_node.queue_free()
+	hunt.drag_rope.queue_free()
+	hunt.drag_node = null
+	hunt.drag_rope = null
 	var hen = hunt.first_of("chicken")
 	hunt.apply_hit(hen, "legs")
 	hen.global_position = player.global_position + Vector3(0, 0, -1)
@@ -240,13 +256,18 @@ func _setup_env() -> void:
 
 func _update_sky() -> void:
 	var t := GameState.time_of_day
-	var ang := (t - 6.0) / 24.0 * TAU
+	# long day (05:00-21:00 = half a turn over 16 h), short night (21:00-05:00 = the other half over 8 h)
+	var ang: float
+	if t >= GameState.NIGHT_END and t < GameState.NIGHT_START:
+		ang = (t - GameState.NIGHT_END) / (GameState.NIGHT_START - GameState.NIGHT_END) * PI
+	else:
+		ang = PI + fposmod(t - GameState.NIGHT_START, 24.0) / (24.0 - GameState.NIGHT_START + GameState.NIGHT_END) * PI
 	var elev := sin(ang)
 	sun.rotation = Vector3(-ang, deg_to_rad(40.0), 0.0)
 	sun.light_energy = clampf(elev * 1.3, 0.0, 1.2)
 	sun.visible = elev > -0.05
-	var day := clampf(elev * 3.0 + 0.5, 0.0, 1.0)
-	var dusk := clampf(1.0 - absf(elev) * 4.0, 0.0, 1.0)
+	var day := smoothstep(-0.15, 0.35, elev)
+	var dusk := clampf(1.0 - absf(elev - 0.05) * 3.5, 0.0, 1.0)
 	sky.sky_top_color = Color(0.02, 0.03, 0.08).lerp(Color(0.25, 0.5, 0.9), day)
 	var hor := Color(0.04, 0.05, 0.1).lerp(Color(0.65, 0.78, 0.9), day).lerp(Color(0.9, 0.45, 0.25), dusk * 0.7)
 	sky.sky_horizon_color = hor
@@ -288,6 +309,7 @@ func _start(is_new: bool) -> void:
 	barn.world = world
 	add_child(barn)
 	barn.message.connect(func(t): ui.toast(t, 4.0))
+	hunt.barn = barn
 	home = HomeS.new()
 	home.builder = builder
 	add_child(home)
@@ -383,7 +405,20 @@ func _on_action(a: String) -> void:
 		"aim": hunt.toggle_aim()
 		"fire": hunt.fire()
 		"scope": hunt.toggle_scope()
-		"weapon": hunt.cycle_weapon()
+		"weapon":
+			# hands: nothing -> axe -> weapons (each in turn) -> nothing
+			if GameState.equip == "none":
+				GameState.equip = "axe"
+			elif GameState.equip == "axe":
+				GameState.equip = "weapon"
+			elif GameState.weapons[GameState.weapon_idx] == "crossbow":
+				GameState.equip = "none"
+			else:
+				var before: int = GameState.weapon_idx
+				hunt.cycle_weapon()
+				if GameState.weapon_idx == before:      # next one is locked: put the weapon away
+					GameState.equip = "none"
+			_equip_text()
 		"speed": hunt.speedup()
 		"sens":
 			GameState.sens_idx = (GameState.sens_idx + 1) % 3
@@ -418,9 +453,10 @@ func _on_action(a: String) -> void:
 		"pright": ui.puzzle.scroll_by(1)
 		"hint": _hint()
 		"torch": _torch()
+		"home": _go_home()
 		"save":
-			_save()
-			ui.toast("تم الحفظ")
+			if _save():
+				ui.toast("تم الحفظ ✓")
 
 func _open_build() -> void:
 	var bi: int = builder.current_index()
@@ -445,7 +481,7 @@ func _sleep() -> void:
 	sleeping = true
 	ui.fade_black(1.2)
 	await get_tree().create_timer(0.7).timeout
-	_offline(fposmod(7.0 - GameState.time_of_day, 24.0))
+	_offline(fposmod(6.0 - GameState.time_of_day, 24.0))
 	GameState.time_of_day = fposmod(GameState.clock_hours, 24.0)
 	_update_sky()
 	_save()
@@ -461,6 +497,7 @@ func _on_drop(pi: int) -> void:
 		sfx.play("place", -2.0, randf_range(0.9, 1.1))
 		home.refresh()
 		ui.puzzle.refresh()
+		_save()
 		if builder.remaining(bi) == 0:
 			ui.toast("اكتملت: %s ✓" % builder.boards[bi].name, 3.0)
 			player.emote("smile", 2.5)
@@ -557,6 +594,8 @@ func _interact() -> void:
 		player.play_action("gather", 0.8)
 		farm.interact(int(best.get_meta("cid")))
 		return
+	if best.is_in_group("tree"):
+		GameState.equip = "axe"
 	player.play_action("chop" if best.is_in_group("tree") else "gather", 0.9)
 	sfx.play("chop" if best.is_in_group("tree") else "rock", -3.0, randf_range(0.92, 1.08))
 	var hp: int = int(best.get_meta("hp")) - (2 if GameState.has_tech("tools") else 1)
@@ -601,11 +640,32 @@ func _process(d: float) -> void:
 		hud_t = 0.0
 		_hud()
 	save_t += d
-	if save_t > 30.0:
+	if save_t > 10.0:
 		save_t = 0.0
 		_save()
 
+## «🏠 المنزل»: fade out, stand in front of the house door looking at it (to see what has been built).
+func _go_home() -> void:
+	if sleeping or not playing or player.intro_lock:
+		return
+	sleeping = true                        # reuse the flag as "busy" so nothing else moves us meanwhile
+	ui.fade_black(0.9)
+	await get_tree().create_timer(0.7).timeout
+	var c: Vector3 = load("res://scripts/building_data.gd").DOORS["house"]["c"]
+	var p := c + Vector3(0, 0, 3.4)
+	player.global_position = Vector3(p.x, world.height_at(p.x, p.z) + 0.3, p.z)
+	player.velocity = Vector3.ZERO
+	player.cam_yaw = 0.0
+	player.cam_pitch = -0.12
+	player.body.rotation.y = 0.0
+	ui.toast("أنت أمام المنزل", 1.5)
+	sleeping = false
+
+func _equip_text() -> void:
+	ui.set_equip_text(GameState.equip, str(HuntLogic.WEAPONS[GameState.weapons[GameState.weapon_idx]]["name"]))
+
 func _hud() -> void:
+	_equip_text()
 	var g := GameState
 	var q := ""
 	var bi: int = builder.current_index()
@@ -617,7 +677,7 @@ func _hud() -> void:
 		q = "%s — متبقي %d قطعة — لديك %d %s. اجمع ثم اضغط «بناء»" % [b.name, builder.remaining(bi), g.count(cost), "حجارة" if cost == "stone" else "خشب"]
 	var hr := int(g.time_of_day)
 	var res := "خشب %d | حجر %d | بذور %d | تفاح %d | مستوى %d | الوقت %02d:%02d" % [g.count("wood"), g.count("stone"), g.count("seeds"), g.count("apples"), g.level(), hr, int((g.time_of_day - hr) * 60.0)]
-	var night := GameState.time_of_day < 6.0 or GameState.time_of_day >= 18.5
+	var night := GameState.is_night()
 	for l in lamp_lights:
 		l.visible = night
 	home.set_night(night)
@@ -659,12 +719,15 @@ func _prompt() -> String:
 		return "تفاعل: اعتنِ بشجرة التفاح"
 	return "تفاعل: اقطع الشجرة" if best.is_in_group("tree") else "تفاعل: كسّر الصخرة"
 
-func _save() -> void:
+func _save() -> bool:
 	if not playing:
-		return
+		return false
 	GameState.player_pos = player.global_position
-	GameState.save_game()
+	var ok := GameState.save_game()
+	if not ok:
+		ui.toast("تعذّر الحفظ على هذا الجهاز!", 3.0)
+	return ok
 
 func _notification(what: int) -> void:
-	if what == NOTIFICATION_APPLICATION_PAUSED or what == NOTIFICATION_WM_CLOSE_REQUEST:
+	if what == NOTIFICATION_APPLICATION_PAUSED or what == NOTIFICATION_APPLICATION_FOCUS_OUT or what == NOTIFICATION_WM_CLOSE_REQUEST or what == NOTIFICATION_WM_GO_BACK_REQUEST:
 		_save()

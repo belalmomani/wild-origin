@@ -124,7 +124,7 @@ func _animate(d: float, spd: float) -> void:
 	var t := Time.get_ticks_msec() * 0.001 + float(get_instance_id() % 97)
 	var run := clampf(spd / 3.0, 0.0, 1.0)
 	_moving = lerpf(_moving, run, clampf(8.0 * d, 0.0, 1.0))
-	var amp := 0.55 * _moving + 0.1 * clampf(spd / 7.0, 0.0, 1.0)
+	var amp := 0.42 * _moving + 0.1 * clampf(spd / 7.0, 0.0, 1.0)
 	for lab in ["f", "h"]:
 		for side in ["l", "r"]:
 			var up := _b("%s%s_up" % [lab, side])

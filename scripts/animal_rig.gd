@@ -15,7 +15,10 @@ static func _material() -> StandardMaterial3D:
 	if _mat == null:
 		_mat = StandardMaterial3D.new()
 		_mat.vertex_color_use_as_albedo = true
-		_mat.roughness = 0.92
+		_mat.roughness = 0.88
+		_mat.rim_enabled = true            # soft fur-like edge light: reads as a volume, not a flat colour
+		_mat.rim = 0.35
+		_mat.rim_tint = 0.6
 		_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 	return _mat
 

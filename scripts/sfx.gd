@@ -88,8 +88,7 @@ func footsteps(d: float, speed: float, on_floor: bool, crouching: bool) -> void:
 		play("step1" if _step_i % 2 == 0 else "step2", -14.0 if crouching else -9.0, randf_range(0.9, 1.1))
 
 func update(d: float, hour: float, in_world: bool) -> void:
-	var elev := sin((hour - 6.0) / 24.0 * TAU)
-	var day := clampf(elev * 3.0 + 0.5, 0.0, 1.0)
+	var day := 1.0 if (hour >= 5.5 and hour < 20.5) else (0.0 if (hour >= 21.5 or hour < 4.5) else (clampf((hour - 4.5), 0.0, 1.0) if hour < 12.0 else clampf(21.5 - hour, 0.0, 1.0)))
 	var k := clampf(d * 2.0, 0.0, 1.0)
 	var dd := linear_to_db(maxf(day * 0.7, 0.001)) if in_world else -80.0
 	var nn := linear_to_db(maxf((1.0 - day) * 0.55, 0.001)) if in_world else -80.0

@@ -139,7 +139,7 @@ func animate(d: float, spd: float, on_floor: bool, vy: float, crouch: bool, acti
 	hp.position.y = maxf(0.45, 0.95 + (hp.position.y - 0.95) * 1.3)
 	var show_pick := action == "gather"
 	var show_hammer := action == "build"
-	var show_axe := not carrying and not show_pick and not show_hammer
+	var show_axe := equip == "axe" and not carrying and not show_pick and not show_hammer
 	tool_axe.visible = show_axe or action == "chop"
 	tool_pick.visible = show_pick
 	tool_hammer.visible = show_hammer

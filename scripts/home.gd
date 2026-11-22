@@ -181,7 +181,7 @@ func hint(pos: Vector3) -> String:
 		return "تفاعل: %s %s" % ["أغلق" if builder.is_open(g) else "افتح", str(D.DOORS[g]["name"])]
 	if t == "bed":
 		var tod: float = GameState.time_of_day
-		return "تفاعل: نم حتى الصباح" if (tod < 6.0 or tod >= 18.5) else "السرير — يمكنك النوم بعد الغروب"
+		return "تفاعل: نم حتى الصباح" if GameState.is_night() else "السرير — يمكنك النوم بعد الغروب"
 	if t == "fire":
 		return "تفاعل: أضف حطبًا / اطبخ اللحم"
 	return ""
@@ -202,8 +202,8 @@ func interact(pos: Vector3) -> bool:
 		return true
 	if best == "bed":
 		var tod: float = GameState.time_of_day
-		if tod >= 6.0 and tod < 18.5:
-			message.emit("لا تشعر بالنعاس — يمكنك النوم من الغروب (18:30) حتى الفجر")
+		if not GameState.is_night():
+			message.emit("لا تشعر بالنعاس — يمكنك النوم من الغروب (21:00) حتى الفجر")
 		else:
 			sleep_request.emit()
 		return true
