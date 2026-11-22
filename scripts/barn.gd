@@ -39,6 +39,7 @@ func _sync() -> void:
 func tick(dt_hours: float, offline: bool = false) -> void:
 	var now := _now()
 	var dt := dt_hours / 24.0
+	_sync()                      # animals appear in the yard as soon as they arrive, built barn or not
 	if not GameState.barn_built:
 		for a in GameState.pen:
 			a.fed = now          # no hunger until a barn exists: fair to the player
@@ -58,10 +59,6 @@ func tick(dt_hours: float, offline: bool = false) -> void:
 					n.queue_free()
 				nodes.erase(int(a.id))
 				GameState.pen.erase(a)
-	_t += dt_hours
-	if _t > 0.2:
-		_t = 0.0
-		_sync()
 
 func notify_after_offline() -> void:
 	for a in GameState.pen:
@@ -86,6 +83,16 @@ func interact(pos: Vector3) -> bool:
 	if not GameState.barn_built or GameState.pen.is_empty() or pos.distance_to(center) > 9.0:
 		return false
 	var now := _now()
+	var milk := 0
+	for a in GameState.pen:                     # collect the milk of animals that were fed
+		var whole := int(floor(float(a.get("milk", 0.0))))
+		if whole > 0:
+			milk += whole
+			a["milk"] = float(a.get("milk", 0.0)) - whole
+	if milk > 0:
+		var got := GameState.add("milk", milk)
+		GameState.xp += 1
+		message.emit("جمعتَ %d حليب ✓" % got if got > 0 else "مخزن الحليب ممتلئ")
 	var list: Array = GameState.pen.duplicate()
 	list.sort_custom(func(x, y): return L.hunger(x, now) > L.hunger(y, now))
 	var fed := 0
@@ -101,8 +108,8 @@ func interact(pos: Vector3) -> bool:
 		fed += 1
 	if fed > 0:
 		message.emit("أطعمتَ %d حيوانًا ✓" % fed)
-	elif GameState.pen.size() > 0:
-		message.emit("الحيوانات شبعانة الآن")
+	elif milk == 0 and GameState.pen.size() > 0:
+		message.emit("الحيوانات شبعانة الآن — الحليب يتجمّع مع الوقت")
 	return true
 
 func _bar(v: float) -> String:
@@ -128,4 +135,11 @@ func info_text(pos: Vector3) -> String:
 		worst = minf(worst, float(a.h))
 		hung = maxf(hung, L.hunger(a, now))
 	var state := "" if GameState.barn_built else " (ابنِ الحظيرة ليبدأ الاعتناء بها)"
-	return "الحظيرة: غزلان %d، وعول %d، دجاج %d%s\nالجوع %s | الصحة %s | علف: تفاح %d، قش %d" % [deer, ibex, hens, state, _bar(clampf(hung / L.GRACE, 0.0, 1.0)), _bar(worst), GameState.count("apples"), GameState.count("hay")]
+	var milk := 0.0
+	var dry := 0
+	for a in GameState.pen:
+		milk += float(a.get("milk", 0.0))
+		if L.hunger(a, now) >= L.WARN and str(a.kind) != "chicken":
+			dry += 1
+	var mt := "حليب جاهز: %d" % int(milk) if dry == 0 else "لا حليب: %d جائع!" % dry
+	return "الحظيرة: غزلان %d، وعول %d، دجاج %d%s\nالجوع %s | الصحة %s | علف: تفاح %d، قش %d | %s" % [deer, ibex, hens, state, _bar(clampf(hung / L.GRACE, 0.0, 1.0)), _bar(worst), GameState.count("apples"), GameState.count("hay"), mt]

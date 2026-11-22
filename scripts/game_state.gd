@@ -3,7 +3,7 @@ extends Node
 const SAVE_PATH := "user://save.json"
 const SETTINGS_PATH := "user://settings.json"
 
-var inv := {"wood": 0, "stone": 0, "seeds": 2, "apples": 0, "arrows": 15, "meat": 0, "hay": 0}
+var inv := {"wood": 0, "stone": 0, "seeds": 2, "apples": 0, "arrows": 15, "meat": 0, "hay": 0, "gseeds": 0, "milk": 0}
 var clock_hours := 8.0        # total game hours (time_of_day = clock_hours mod 24)
 var crops: Array = []
 var next_crop_id := 1
@@ -50,7 +50,7 @@ var move := Vector2.ZERO
 var cam_delta := Vector2.ZERO
 
 func reset() -> void:
-	inv = {"wood": 0, "stone": 0, "seeds": 2, "apples": 0, "arrows": 15, "meat": 0, "hay": 0}
+	inv = {"wood": 0, "stone": 0, "seeds": 2, "apples": 0, "arrows": 15, "meat": 0, "hay": 0, "gseeds": 0, "milk": 0}
 	barn_unlocked = false
 	barn_built = false
 	fire_fuel = 0.0
@@ -87,7 +87,7 @@ func cap_of(k: String) -> int:
 	match k:
 		"wood", "stone":
 			return 400 if has_tech("storage") else 150
-		"apples", "meat", "hay":
+		"apples", "meat", "hay", "milk":
 			return 100 if has_tech("storage") else 40
 	return 99999
 

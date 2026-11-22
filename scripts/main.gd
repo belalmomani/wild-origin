@@ -6,6 +6,7 @@ const PlayerS := preload("res://scripts/player.gd")
 const UIS := preload("res://scripts/ui.gd")
 const BuildS := preload("res://scripts/building.gd")
 const FarmS := preload("res://scripts/farm.gd")
+const ForageS := preload("res://scripts/forage.gd")
 const HuntS := preload("res://scripts/hunt.gd")
 const BarnS := preload("res://scripts/barn.gd")
 const SfxS := preload("res://scripts/sfx.gd")
@@ -82,6 +83,25 @@ func _smoke() -> void:
 		print("SMOKE FAIL: deer kill/loot")
 		get_tree().quit(1)
 		return
+	if get_tree().get_nodes_in_group("forage").size() < 10:
+		print("SMOKE FAIL: no forage grass in the forest")
+		get_tree().quit(1)
+		return
+	var fcrop: Dictionary = load("res://scripts/farm_logic.gd").new_crop(99, 3.0, 3.0, 0.0, "fodder")
+	GameState.crops.append(fcrop)
+	farm._spawn(fcrop)
+	fcrop["fruit"] = true
+	fcrop["g"] = 2.0
+	farm._refresh(fcrop)
+	var hay0 := GameState.count("hay")
+	farm.interact(99)
+	if GameState.count("hay") != hay0 + 4 or fcrop.fruit:
+		print("SMOKE FAIL: fodder harvest")
+		get_tree().quit(1)
+		return
+	GameState.crops.erase(fcrop)
+	farm.nodes[99].queue_free()
+	farm.nodes.erase(99)
 	var ibx = hunt.first_of("ibex")
 	if ibx == null or ibx.bones.is_empty():
 		print("SMOKE FAIL: ibex model missing")
@@ -296,6 +316,9 @@ func _start(is_new: bool) -> void:
 	farm.world = world
 	add_child(farm)
 	farm.message.connect(func(t): ui.toast(t, 4.0))
+	var forage := ForageS.new()
+	forage.world = world
+	add_child(forage)
 	hunt = HuntS.new()
 	hunt.world = world
 	hunt.player = player
@@ -585,7 +608,7 @@ func _interact() -> void:
 		return
 	var best = null
 	var bd := 4.0
-	for g in ["tree", "rock", "crop"]:
+	for g in ["tree", "rock", "crop", "forage"]:
 		for n in get_tree().get_nodes_in_group(g):
 			var d: float = n.global_position.distance_to(player.global_position)
 			if d < bd:
@@ -593,6 +616,16 @@ func _interact() -> void:
 				best = n
 	if best == null:
 		ui.toast("لا يوجد شيء قريب للتفاعل")
+		return
+	if best.is_in_group("forage"):
+		player.play_action("gather", 0.8)
+		var ns := randi_range(1, 3)
+		GameState.add("gseeds", ns)
+		GameState.removed[int(best.get_meta("id"))] = true
+		GameState.xp += 1
+		ui.toast("+%d بذور علف — ازرعها في المزرعة المسوّرة" % ns, 2.5)
+		sfx.play("harvest", -6.0)
+		best.queue_free()
 		return
 	if best.is_in_group("crop"):
 		player.play_action("gather", 0.8)
@@ -681,6 +714,8 @@ func _hud() -> void:
 		q = "%s — متبقي %d قطعة — لديك %d %s. اجمع ثم اضغط «بناء»" % [b.name, builder.remaining(bi), g.count(cost), "حجارة" if cost == "stone" else "خشب"]
 	var hr := int(g.time_of_day)
 	var res := "خشب %d | حجر %d | بذور %d | تفاح %d | مستوى %d | الوقت %02d:%02d" % [g.count("wood"), g.count("stone"), g.count("seeds"), g.count("apples"), g.level(), hr, int((g.time_of_day - hr) * 60.0)]
+	if g.count("gseeds") + g.count("hay") + g.count("milk") > 0:
+		res += "\nبذور علف %d | علف %d | حليب %d" % [g.count("gseeds"), g.count("hay"), g.count("milk")]
 	var night := GameState.is_night()
 	for l in lamp_lights:
 		l.visible = night
@@ -713,7 +748,7 @@ func _prompt() -> String:
 		return h
 	var best = null
 	var bd := 3.2
-	for g in ["tree", "rock", "crop"]:
+	for g in ["tree", "rock", "crop", "forage"]:
 		for n in get_tree().get_nodes_in_group(g):
 			var d: float = n.global_position.distance_to(pos)
 			if d < bd:
@@ -721,8 +756,10 @@ func _prompt() -> String:
 				best = n
 	if best == null:
 		return ""
+	if best.is_in_group("forage"):
+		return "تفاعل: اجمع بذور العشب"
 	if best.is_in_group("crop"):
-		return "تفاعل: اعتنِ بشجرة التفاح"
+		return "تفاعل: اعتنِ بالمزروعات (حصاد / فحص)"
 	return "تفاعل: اقطع الشجرة" if best.is_in_group("tree") else "تفاعل: كسّر الصخرة"
 
 func _save() -> bool:

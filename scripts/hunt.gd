@@ -382,7 +382,7 @@ func near_barn() -> bool:
 	var dp: Vector3 = drag_node.global_position
 	var pp: Vector3 = player.global_position
 	var c: Vector3 = barn.center
-	return Vector2(dp.x - c.x, dp.z - c.z).length() < 8.5 or Vector2(pp.x - c.x, pp.z - c.z).length() < 7.0
+	return Vector2(dp.x - c.x, dp.z - c.z).length() < 10.0 or Vector2(pp.x - c.x, pp.z - c.z).length() < 9.0
 
 ## «تفاعل» near the barn while pulling the sled: tie the animal up right away.
 func try_deliver() -> bool:
@@ -393,13 +393,15 @@ func try_deliver() -> bool:
 
 func _deliver_drag() -> void:
 	drag_busy = true
-	message.emit("وصلتَ الحظيرة — تربط الغزال بالحبل...")
+	message.emit("وصلتَ الحظيرة — تفكّ الحبل...")
 	player.speed_mult = 1.0
-	await get_tree().create_timer(2.5).timeout
+	await get_tree().create_timer(1.0).timeout
 	var k := GameState.drag_kind
 	GameState.drag_kind = ""
 	GameState.pen.append(BL.new_animal(GameState.next_pen_id, k, GameState.clock_hours / 24.0))
 	GameState.next_pen_id += 1
+	if barn != null:
+		barn._sync()                                  # the animal appears in the yard right away
 	if is_instance_valid(drag_node):
 		drag_node.queue_free()
 	if is_instance_valid(drag_rope):
@@ -408,5 +410,5 @@ func _deliver_drag() -> void:
 	drag_rope = null
 	drag_animal = null
 	drag_busy = false
-	message.emit("ربطتَ الغزال ووضعتَه في الحظيرة ✓")
+	message.emit("فككتَ الحبل ووضعتَ الغزال في الحظيرة ✓ — أطعمه كل يوم ليعطيك حليبًا")
 	GameState.xp += 4

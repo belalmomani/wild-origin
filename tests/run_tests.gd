@@ -216,4 +216,27 @@ func _init() -> void:
 	var HL = load("res://scripts/hunt_logic.gd")
 	if not HL.ANIMALS.has("ibex") or float(HL.ANIMALS["ibex"]["hp"]) <= 0.0:
 		print("FAIL ibex stats"); fails += 1
+	# phase 5: fodder farming and milk
+	var FLg = load("res://scripts/farm_logic.gd")
+	var fc: Dictionary = FLg.new_crop(1, 0.0, 0.0, 0.0, "fodder")
+	for fi in 40:
+		FLg.water(fc, fi * 0.05)
+		FLg.step(fc, (fi + 1) * 0.05, 0.05, false)
+	if not fc.fruit or FLg.stage(fc) != "علف جاهز":
+		print("FAIL fodder did not ripen in 2 watered days ", fc); fails += 1
+	var fd: Dictionary = FLg.new_crop(2, 0.0, 0.0, 0.0, "fodder")
+	for fi in 100:
+		FLg.step(fd, (fi + 1) * 0.05, 0.05, false)
+	if not fd.dead:
+		print("FAIL unwatered fodder should die ", fd); fails += 1
+	var BLg = load("res://scripts/barn_logic.gd")
+	var ma: Dictionary = BLg.new_animal(1, "deer", 0.0)
+	for mi in 7:
+		BLg.step(ma, 0.1 * (mi + 1), 0.1, false)
+	if float(ma.milk) < 1.0:
+		print("FAIL fed deer should give milk ", ma); fails += 1
+	var mb: Dictionary = BLg.new_animal(2, "deer", 0.0)
+	BLg.step(mb, 0.9, 0.1, false)
+	if float(mb.milk) != 0.0:
+		print("FAIL hungry deer must not give milk ", mb); fails += 1
 	quit(1 if fails > 0 else 0)

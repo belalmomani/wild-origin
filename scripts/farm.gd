@@ -14,6 +14,10 @@ var wilt_mat: StandardMaterial3D
 var dead_mat: StandardMaterial3D
 var apple_mesh := SphereMesh.new()
 var apple_mat: StandardMaterial3D
+var tuft_mesh: ArrayMesh
+var grain_mat: StandardMaterial3D
+var grain_mesh := CapsuleMesh.new()
+var dry_tuft_mat: StandardMaterial3D
 
 func _ready() -> void:
 	tree_mesh = G.tree(2, 5)
@@ -26,6 +30,13 @@ func _ready() -> void:
 	apple_mesh.radial_segments = 8
 	apple_mesh.rings = 4
 	apple_mat = M.flat(Color(0.75, 0.08, 0.06), 0.4)
+	tuft_mesh = G.tuft()
+	grain_mat = M.flat(Color(0.86, 0.7, 0.25), 0.7)
+	grain_mesh.radius = 0.035
+	grain_mesh.height = 0.2
+	grain_mesh.radial_segments = 6
+	grain_mesh.rings = 2
+	dry_tuft_mat = M.flat(Color(0.62, 0.55, 0.28), 1.0)
 	for c in GameState.crops:
 		_spawn(c)
 
@@ -52,14 +63,23 @@ func _spawn(c: Dictionary) -> void:
 	n.add_child(mound)
 	var ti := MeshInstance3D.new()
 	ti.name = "T"
-	ti.mesh = tree_mesh
+	ti.mesh = tuft_mesh if L.is_fodder(c) else tree_mesh
 	n.add_child(ti)
 	var fruit := Node3D.new()
 	fruit.name = "F"
 	ti.add_child(fruit)
 	var r := RandomNumberGenerator.new()
 	r.seed = int(c.id) * 977
-	for i in 10:
+	if L.is_fodder(c):
+		mound.scale = Vector3(1.0, 0.6, 1.0)
+		for i in 7:                                  # golden grain heads on the ripe fodder
+			var gh := MeshInstance3D.new()
+			gh.mesh = grain_mesh
+			gh.material_override = grain_mat
+			var a := r.randf() * TAU
+			gh.position = Vector3(cos(a) * 0.22, 0.8 + r.randf() * 0.2, sin(a) * 0.22)
+			fruit.add_child(gh)
+	for i in (0 if L.is_fodder(c) else 10):
 		var d := Vector3(r.randf_range(-1, 1), r.randf_range(-0.4, 1), r.randf_range(-1, 1)).normalized() * r.randf_range(1.2, 1.8)
 		var a := MeshInstance3D.new()
 		a.mesh = apple_mesh
@@ -75,7 +95,13 @@ func _refresh(c: Dictionary) -> void:
 	if n == null:
 		return
 	var ti: MeshInstance3D = n.get_node("T")
-	ti.visible = float(c.g) >= L.FIRST_SIGN_DAYS or bool(c.dead)
+	var sp := L.spec(c)
+	ti.visible = float(c.g) >= float(sp["first"]) or bool(c.dead)
+	if L.is_fodder(c):
+		ti.scale = Vector3.ONE * (0.6 + 1.2 * L.scale_of(c))
+		ti.set_surface_override_material(0, dry_tuft_mat if (c.dead or float(c.h) <= 0.6 or L.moisture(c, _now()) < 0.2) else null)
+		(n.get_node("T/F") as Node3D).visible = bool(c.fruit) and not c.dead
+		return
 	ti.scale = Vector3.ONE * L.scale_of(c)
 	if c.dead:
 		ti.set_surface_override_material(1, dead_mat)
@@ -94,16 +120,17 @@ func tick(dt_hours: float, offline: bool = false) -> void:
 	var dt := dt_hours / 24.0
 	for c in GameState.crops:
 		var boost := 1.0
-		if GameState.farm_built and absf(float(c.x) - D.FARM_C.x) < 4.6 and absf(float(c.z) - D.FARM_C.z) < 4.6:
+		if in_farm(Vector3(c.x, 0, c.z)):
 			boost = FARM_BOOST
 		var ev := L.step(c, now, dt, offline, boost)
 		if offline:
 			continue
+		var fod := L.is_fodder(c)
 		match ev:
-			"dry": message.emit("شجرة تفاح عطشى — اسقها اليوم قبل أن تتدهور!")
-			"dying": message.emit("شجرة تفاح تتدهور! اسقها فورًا وإلا ستموت.")
-			"dead": message.emit("ماتت شجرة تفاح. أزِلها ثم ازرع بذرة جديدة.")
-			"fruit": message.emit("نضجت الثمار! اقترب من الشجرة واضغط «تفاعل».")
+			"dry": message.emit("العلف عطشان — اسقه اليوم!" if fod else "شجرة تفاح عطشى — اسقها اليوم قبل أن تتدهور!")
+			"dying": message.emit("العلف يذبل! اسقه فورًا." if fod else "شجرة تفاح تتدهور! اسقها فورًا وإلا ستموت.")
+			"dead": message.emit("مات العلف. أزِله ثم ازرع بذور علف جديدة." if fod else "ماتت شجرة تفاح. أزِلها ثم ازرع بذرة جديدة.")
+			"fruit": message.emit("نضج العلف! اقترب منه واضغط «تفاعل» لحصاده." if fod else "نضجت الثمار! اقترب من الشجرة واضغط «تفاعل».")
 	if not offline and Engine.get_process_frames() % 30 == 0:
 		refresh_all()
 
@@ -117,15 +144,32 @@ func advance_offline(hours: float) -> void:
 		left -= step
 	refresh_all()
 	for c in GameState.crops:
-		if not c.dead and (float(c.h) < 1.0 or _now() - float(c.lw) >= L.WARN_DAYS):
-			message.emit("مرّ وقت أثناء غيابك: تحقّق من أشجار التفاح واسقِها.")
+		if not c.dead and (float(c.h) < 1.0 or _now() - float(c.lw) >= float(L.spec(c)["warn"])):
+			message.emit("مرّ وقت أثناء غيابك: تحقّق من المزروعات واسقِها.")
 			break
 
 func notify_after_offline() -> void:
 	for c in GameState.crops:
-		if not c.dead and (float(c.h) < 1.0 or _now() - float(c.lw) >= L.WARN_DAYS):
-			message.emit("مرّ وقت أثناء غيابك: تحقّق من أشجار التفاح واسقِها.")
+		if not c.dead and (float(c.h) < 1.0 or _now() - float(c.lw) >= float(L.spec(c)["warn"])):
+			message.emit("مرّ وقت أثناء غيابك: تحقّق من المزروعات واسقِها.")
 			return
+
+## Inside the finished farm fence (fodder can only be grown here).
+func in_farm(pos: Vector3) -> bool:
+	return GameState.farm_built and absf(pos.x - D.FARM_C.x) < 4.6 and absf(pos.z - D.FARM_C.z) < 4.6
+
+func _plant_fodder(pos: Vector3) -> bool:
+	for c in GameState.crops:
+		if Vector2(c.x - pos.x, c.z - pos.z).length() < 0.9:
+			message.emit("المكان مزدحم — ابتعد قليلًا")
+			return false
+	GameState.spend("gseeds", 1)
+	var c := L.new_crop(GameState.next_crop_id, pos.x, pos.z, _now(), "fodder")
+	GameState.next_crop_id += 1
+	GameState.crops.append(c)
+	_spawn(c)
+	message.emit("زرعتَ بذور علف. اسقِها يوميًا ثم احصدها لإطعام الحيوانات")
+	return true
 
 func _nearest(pos: Vector3, maxd: float) -> Dictionary:
 	var best := {}
@@ -138,6 +182,11 @@ func _nearest(pos: Vector3, maxd: float) -> Dictionary:
 	return best
 
 func plant(pos: Vector3) -> bool:
+	if GameState.count("gseeds") > 0 and in_farm(pos):
+		return _plant_fodder(pos)
+	if GameState.count("gseeds") > 0 and GameState.count("seeds") <= 0:
+		message.emit("ازرع بذور العلف داخل المزرعة المسوّرة (أكمل بناء سور المزرعة وبوابتها)")
+		return false
 	if not _nearest(pos, 1.6).is_empty():
 		message.emit("قريب جدًا من شجرة أخرى")
 		return false
@@ -181,6 +230,15 @@ func interact(cid: int) -> void:
 		nodes.erase(cid)
 		GameState.add("wood", 1)
 		message.emit("أزلتَ الشجرة الميتة (+1 خشب). ازرع بذرة جديدة.")
+	elif c.fruit and L.is_fodder(c):
+		L.harvest(c, _now())
+		var gh := GameState.add("hay", 4)
+		var sd := randf() < 0.5
+		if sd:
+			GameState.add("gseeds", 1)
+		_refresh(c)
+		GameState.xp += 1
+		message.emit(("+%d علف" % gh) + (" و+1 بذرة علف" if sd else "") if gh > 0 else "مخزن العلف ممتلئ!")
 	elif c.fruit:
 		L.harvest(c, _now())
 		GameState.add("apples", 4 if GameState.has_tech("compost") else 3)
@@ -198,11 +256,11 @@ func _bar(v: float) -> String:
 	return "█".repeat(n) + "░".repeat(10 - n)
 
 func info_bars(c: Dictionary) -> String:
-	var g := clampf(float(c.g) / L.FRUIT_DAYS, 0.0, 1.0)
+	var g := clampf(float(c.g) / float(L.spec(c)["ripe"]), 0.0, 1.0)
 	return "نمو %s %d%% | رطوبة %s | صحة %s%s" % [_bar(g), int(g * 100.0), _bar(L.moisture(c, _now())), _bar(float(c.h)), " | ثمار جاهزة!" if c.fruit else ""]
 
 func info_text(pos: Vector3) -> String:
 	var c := _nearest(pos, 5.0)
 	if c.is_empty():
 		return ""
-	return "شجرة تفاح (%s)\n%s" % [L.stage(c), info_bars(c)]
+	return "%s (%s)\n%s" % ["علف" if L.is_fodder(c) else "شجرة تفاح", L.stage(c), info_bars(c)]
