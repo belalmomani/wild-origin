@@ -1,72 +1,117 @@
 #!/usr/bin/env python3
-"""Convert the supplied animal GLBs (forest deer, Nubian ibex) into light, game-ready rigid-rig data for Godot.
+"""Procedural, anatomically shaped red-deer stag and Nubian ibex for the game (rigid bone rig, painted vertex colours).
 
-    python3 tools/build_animals.py        # needs numpy; reads tools/animals_src/*.glb
+    python3 tools/build_animals.py              # writes assets/animals/{deer,ibex}_data.gd
+    python3 tools/build_animals.py --preview    # also renders tools/preview_*.png (matplotlib) for a quick look
 
-The source models are static, material-less, Z-up meshes made of ~640-vertex ellipsoids (1280 triangles each):
-34k / 55k triangles per animal is far too heavy for a phone. Every ellipsoid is detected (exact fit), regenerated
-as a 20 / 80 / 320-triangle icosphere, and the parts are merged per bone. Output: assets/animals/<name>_data.gd
-(positions relative to each bone pivot, in game axes: Y up, forward = -Z, X = right, metres, scaled).
+The supplied GLBs (tools/animals_src) were made of boxy ellipsoid blobs with 18-vertex prism legs, far from the reference
+renders. Here every body part is a smooth lofted tube (elliptical cross-sections following the animal's silhouette),
+the colours are painted per vertex from anatomy (pale belly / throat, dark back stripe, white socks, dark hooves ...)
+with baked ambient occlusion and a little fur variation. Output goes to a GDScript data file (see scripts/animal_rig.gd).
 
-Bone layout follows tools/blender/rig_deer.py and build_nubian_ibex_rig.py. A few joint pivots are corrected where the
-Blender scripts put them in the middle of a leg segment.
+Game axes: X right (left leg = -X), Y up, forward = -Z. Author-space helper P(x, y, f) takes f = distance forward.
 """
-import json, os, struct, sys, zlib
+import os, sys, zlib
 import numpy as np
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-SRC = os.path.join(ROOT, "animals_src")
 OUT = os.path.join(ROOT, "..", "assets", "animals")
-SCALE = 0.5
 
 
-# ------------------------------------------------------------------ GLB reading
-def load_glb(path):
-    b = open(path, "rb").read()
-    off = 12
-    js = bn = None
-    while off < len(b):
-        l, t = struct.unpack("<I4s", b[off:off + 8])
-        d = b[off + 8:off + 8 + l]
-        off += 8 + l
-        if t == b"JSON":
-            js = json.loads(d)
-        elif t.startswith(b"BIN"):
-            bn = d
-    return js, bn
+def P(x, y, f):
+    return np.array([x, y, -f], float)
 
 
-def accessor(js, bn, ai):
-    a = js["accessors"][ai]
-    v = js["bufferViews"][a["bufferView"]]
-    nc = {"SCALAR": 1, "VEC2": 2, "VEC3": 3, "VEC4": 4}[a["type"]]
-    dt = {5126: "<f4", 5123: "<u2", 5125: "<u4", 5121: "u1"}[a["componentType"]]
-    off = v.get("byteOffset", 0) + a.get("byteOffset", 0)
-    arr = np.frombuffer(bn, dtype=dt, count=a["count"] * nc, offset=off)
-    arr = arr.reshape(a["count"], nc) if nc > 1 else arr
-    return arr, a
+def norm(v):
+    v = np.asarray(v, float)
+    n = np.linalg.norm(v, axis=-1, keepdims=True)
+    return v / np.where(n < 1e-12, 1, n)
 
 
-def read_parts(path):
-    js, bn = load_glb(path)
-    parts = []
-    for n in js["nodes"]:
-        if "mesh" not in n:
-            continue
-        pr = js["meshes"][n["mesh"]]["primitives"][0]
-        P, _ = accessor(js, bn, pr["attributes"]["POSITION"])
-        C, ca = accessor(js, bn, pr["attributes"]["COLOR_0"])
-        I, _ = accessor(js, bn, pr["indices"])
-        C = C.astype(np.float64)
-        if ca["componentType"] == 5121:
-            C = C / 255.0
-        elif ca["componentType"] == 5123:
-            C = C / 65535.0
-        parts.append({"name": n["name"], "P": P.astype(np.float64), "C": C[:, :3], "I": I.reshape(-1, 3).astype(np.int64)})
-    return parts
+# ------------------------------------------------------------------ meshes
+def catmull(path, sub):
+    p = np.asarray(path, float)
+    if len(p) < 3:
+        t = np.linspace(0, 1, sub * (len(p) - 1) + 1)[:, None]
+        return p[0] * (1 - t) + p[-1] * t, np.linspace(0, len(p) - 1, len(t))
+    ext = np.vstack([2 * p[0] - p[1], p, 2 * p[-1] - p[-2]])
+    out, par = [], []
+    for i in range(len(p) - 1):
+        p0, p1, p2, p3 = ext[i], ext[i + 1], ext[i + 2], ext[i + 3]
+        for s in range(sub):
+            t = s / sub
+            out.append(0.5 * ((2 * p1) + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t * t + (-p0 + 3 * p1 - 3 * p2 + p3) * t ** 3))
+            par.append(i + t)
+    out.append(p[-1])
+    par.append(len(p) - 1)
+    return np.array(out), np.array(par)
 
 
-# ------------------------------------------------------------------ geometry helpers
+def tube(path, rx, ry=None, seg=12, sub=5, ref=(0, 1, 0), ridge=None, caps=(True, True)):
+    """Smooth tube along a Catmull-Rom path. rx = half width (side to side), ry = half height; scalars or per-key arrays."""
+    path = np.asarray(path, float)
+    n = len(path)
+    rx = np.broadcast_to(np.asarray(rx, float), (n,)).copy()
+    ry = rx.copy() if ry is None else np.broadcast_to(np.asarray(ry, float), (n,)).copy()
+    pts, par = catmull(path, sub)
+    idx = np.arange(n)
+    ax = np.interp(par, idx, rx)
+    ay = np.interp(par, idx, ry)
+    T = norm(np.gradient(pts, axis=0))
+    R = np.asarray(ref, float)
+    lat = np.cross(T, R)
+    bad = np.linalg.norm(lat, axis=1) < 1e-3
+    lat[bad] = np.cross(T[bad], np.array([1.0, 0, 0]))
+    lat = norm(lat)
+    up2 = norm(np.cross(lat, T))
+    if ridge is not None:
+        m = 1.0 + ridge[0] * np.cos(par * ridge[1])
+        ax, ay = ax * m, ay * m
+    rings, nrms = [], []
+    th = np.linspace(0, 2 * np.pi, seg, endpoint=False)
+    c, s = np.cos(th), np.sin(th)
+
+    def ring(center, a, b, l, u, t, phi):
+        p = center[None] + (a * c)[:, None] * l[None] * np.cos(phi) + (b * s)[:, None] * u[None] * np.cos(phi) + t[None] * (np.sin(phi) * 0.5 * (a + b))
+        nn = norm((c / a)[:, None] * l[None] * np.cos(phi) + (s / b)[:, None] * u[None] * np.cos(phi) + t[None] * np.sin(phi))
+        return p, nn
+    if caps[0]:
+        for phi in (-1.35, -0.95, -0.5):
+            p, nn = ring(pts[0], ax[0], ay[0], lat[0], up2[0], T[0], phi)
+            rings.append(p)
+            nrms.append(nn)
+    for i in range(len(pts)):
+        p, nn = ring(pts[i], ax[i], ay[i], lat[i], up2[i], T[i], 0.0)
+        rings.append(p)
+        nrms.append(nn)
+    if caps[1]:
+        for phi in (0.5, 0.95, 1.35):
+            p, nn = ring(pts[-1], ax[-1], ay[-1], lat[-1], up2[-1], T[-1], phi)
+            rings.append(p)
+            nrms.append(nn)
+    V = np.concatenate(rings)
+    N = np.concatenate(nrms)
+    F = []
+    nr = len(rings)
+    for i in range(nr - 1):
+        for j in range(seg):
+            a, b = i * seg + j, i * seg + (j + 1) % seg
+            c2, d = (i + 1) * seg + j, (i + 1) * seg + (j + 1) % seg
+            F += [(a, b, d), (a, d, c2)]
+    extra = []
+    if caps[0]:
+        extra.append((V[: seg].mean(0), -T[0], 0))
+    if caps[1]:
+        extra.append((V[-seg:].mean(0), T[-1], len(V) - seg))
+    for centre, nv, base in extra:
+        k = len(V)
+        V = np.vstack([V, centre])
+        N = np.vstack([N, nv[None]])
+        for j in range(seg):
+            F.append((k, base + j, base + (j + 1) % seg))
+    return V, N, np.array(F)
+
+
 def icosphere(level):
     t = (1.0 + 5 ** 0.5) / 2.0
     v = [(-1, t, 0), (1, t, 0), (-1, -t, 0), (1, -t, 0), (0, -1, t), (0, 1, t), (0, -1, -t), (0, 1, -t),
@@ -76,8 +121,7 @@ def icosphere(level):
          (8, 6, 7), (9, 8, 1)]
     v = [np.array(p, float) / np.linalg.norm(p) for p in v]
     for _ in range(level):
-        cache = {}
-        nf = []
+        cache, nf = {}, []
 
         def mid(a, b):
             k = (min(a, b), max(a, b))
@@ -93,271 +137,355 @@ def icosphere(level):
     return np.array(v), np.array(f)
 
 
-def fit_ellipsoid(P):
-    """Return (residual, rotation R, half extents, centre) for the best of axis-aligned / PCA axes."""
-    c = (P.max(0) + P.min(0)) / 2
-    Q = P - c
-    _, V = np.linalg.eigh(np.cov(Q.T))
-    best = None
-    for R in (np.eye(3), V):
-        L = Q @ R
-        ext = (L.max(0) - L.min(0)) / 2
-        c2 = (L.max(0) + L.min(0)) / 2
-        U = (L - c2) / ext
-        res = np.abs(np.linalg.norm(U, axis=1) - 1).max()
-        if best is None or res < best[0]:
-            best = (res, R, ext, c2 @ R.T + c)
-    return best
-
-
-def regen_ellipsoid(P):
-    res, R, ext, c = fit_ellipsoid(P)
-    if res > 0.02:
-        return None
-    m = float(ext.max())
-    level = 3 if m > 0.45 else (2 if m > 0.22 else (1 if m > 0.05 else 0))
+def ell(centre, r, level=2, rot=None):
+    """Ellipsoid with half extents r=(x, y, z) in game axes; rot = 3x3 matrix applied to the local axes."""
     U, F = icosphere(level)
-    pts = c + (U * ext) @ R.T
-    nrm = (U / ext) @ R.T
-    nrm /= np.linalg.norm(nrm, axis=1, keepdims=True)
-    return pts, nrm, F
+    r = np.asarray(r, float)
+    pts = U * r
+    nrm = norm(U / r)
+    if rot is not None:
+        pts = pts @ rot.T
+        nrm = nrm @ rot.T
+    return pts + np.asarray(centre, float), nrm, F
 
 
-def flat_expand(P, I):
-    """Flat-shaded copy (own vertices per triangle). Normal from the source (counter-clockwise) winding."""
-    tri = P[I]                                   # (n,3,3)
-    n = np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0])
-    ln = np.linalg.norm(n, axis=1, keepdims=True)
-    n = n / np.where(ln == 0, 1, ln)
-    pts = tri.reshape(-1, 3)
-    nrm = np.repeat(n, 3, axis=0)
-    F = np.arange(len(pts)).reshape(-1, 3)
-    return pts, nrm, F
+def rotz(a):
+    c, s = np.cos(a), np.sin(a)
+    return np.array([[c, -s, 0], [s, c, 0], [0, 0, 1]])
 
 
-def part_mesh(part):
-    r = regen_ellipsoid(part["P"]) if len(part["P"]) == 642 else None
-    if r is None:
-        r = flat_expand(part["P"], part["I"])
-    pts, nrm, F = r
-    col = np.tile(part["C"][0], (len(pts), 1))
-    return pts, nrm, col, F
+def rotx(a):
+    c, s = np.cos(a), np.sin(a)
+    return np.array([[1, 0, 0], [0, c, -s], [0, s, c]])
 
 
-def shade(col, nrm_game, pts_game, seed):
-    """Bake soft lighting into vertex colours so the models read as volumes: darker undersides / inner legs,
-    lighter backs, plus a little per-vertex fur variation."""
-    rng = np.random.default_rng(seed)
-    up = nrm_game[:, 1]
-    k = 0.66 + 0.34 * np.clip(up * 0.5 + 0.5, 0, 1) ** 0.8
-    k = k * (1.0 + rng.normal(0, 0.035, len(col)))
-    # lower parts of the body (close to the ground) sit in shadow
-    k = k * (0.86 + 0.14 * np.clip(pts_game[:, 1] / 0.8, 0, 1))
-    return np.clip(col * k[:, None], 0, 1)
+def roty(a):
+    c, s = np.cos(a), np.sin(a)
+    return np.array([[c, 0, s], [0, 1, 0], [-s, 0, c]])
 
 
-# ------------------------------------------------------------------ animal definitions (model axes)
-# Each animal: axis conversion model->game, bones {name: (parent, head)}, part->bone rule, hit zones by bone groups.
-def conv_deer(v):        # model: +X forward, +Y left, +Z up   ->  game: forward -Z, left -X, up +Y
-    v = np.asarray(v, float)
-    return np.stack([-v[..., 1], v[..., 2], -v[..., 0]], axis=-1)
+# ------------------------------------------------------------------ colour helpers
+def mix(a, b, w):
+    a = np.asarray(a, float)
+    b = np.asarray(b, float)
+    w = np.asarray(w, float)[..., None] if np.ndim(w) else w
+    return a * (1 - w) + b * w
 
 
-def conv_ibex(v):        # model: +Y forward, +X right, +Z up  ->  game: forward -Z, right +X, up +Y
-    v = np.asarray(v, float)
-    return np.stack([v[..., 0], v[..., 2], -v[..., 1]], axis=-1)
+def ss(a, b, x):
+    t = np.clip((np.asarray(x, float) - a) / (b - a), 0, 1)
+    return t * t * (3 - 2 * t)
 
 
-def deer_bones():
-    b = {"root": (None, (0, 0, 0)), "spine": ("root", (-0.48, 0, 1.45)), "chest": ("spine", (0.18, 0, 1.60)),
-         "neck": ("chest", (0.50, 0, 1.72)), "head": ("neck", (0.70, 0, 2.15)), "tail": ("spine", (-0.72, 0, 1.65)),
-         "ear_l": ("head", (0.72, 0.08, 2.48)), "ear_r": ("head", (0.72, -0.08, 2.48)),
-         "horn_l": ("head", (0.72, 0.10, 2.62)), "horn_r": ("head", (0.72, -0.10, 2.62))}
-    for lab, parent, x, hip_x in [("f", "chest", 0.48, 0.48), ("h", "spine", -0.51, -0.51)]:
-        for side, y in [("l", 0.22 if lab == "f" else 0.23), ("r", -0.22 if lab == "f" else -0.23)]:
-            b[f"{lab}{side}_up"] = (parent, (x, y, 1.25))
-            b[f"{lab}{side}_lo"] = (f"{lab}{side}_up", (x, y, 0.48))
-            b[f"{lab}{side}_ft"] = (f"{lab}{side}_lo", (x + 0.02, y, 0.20))
-    return b
+def flat(c):
+    return lambda p, n: np.tile(np.asarray(c, float), (len(p), 1))
 
 
-def deer_bone_of(name, c):
-    n = name.lower()
-    for lab, key in [("f", "front"), ("h", "hind")]:
-        for side, near in [("l", "far"), ("r", "near")]:
-            if f"{key}_{near}" in n:
-                if "hoof" in n:
-                    return f"{lab}{side}_ft"
-                if "lower" in n:
-                    return f"{lab}{side}_lo"
-                return f"{lab}{side}_up"       # upper + the knee bulge (it sits in the middle of the upper segment)
-    if n.startswith("ear"):
-        return "ear_l" if c[1] >= 0 else "ear_r"
-    if n.startswith("antler"):
-        return "horn_l" if c[1] >= 0 else "horn_r"
-    if n.startswith("tail"):
-        return "tail"
-    if any(k in n for k in ("head", "muzzle", "nose", "eye")):
-        return "head"
-    if "neck" in n or "throat" in n:
-        return "neck"
-    if "chest" in n:
-        return "chest"
-    return "spine"
+# ------------------------------------------------------------------ animals
+class Part:
+    def __init__(self, bone, mesh, color, name=""):
+        self.bone, self.mesh, self.color, self.name = bone, mesh, color, name
 
 
-def ibex_bones():
-    b = {"root": (None, (0, 0, 0)), "pelvis": ("root", (0, -0.48, 1.42)), "spine": ("pelvis", (0, -0.10, 1.48)),
-         "chest": ("spine", (0, 0.42, 1.55)), "neck": ("chest", (0, 0.72, 1.72)), "head": ("neck", (0, 0.94, 2.02)),
-         "tail": ("pelvis", (0, -0.48, 1.52))}
-    for s, side in [(-1, "l"), (1, "r")]:
-        b[f"ear_{side}"] = ("head", (s * 0.18, 0.82, 2.22))
-        b[f"horn_{side}"] = ("head", (s * 0.16, 0.83, 2.29))
-        for lab, y, parent in [("f", 0.53, "chest"), ("h", -0.57, "pelvis")]:
-            b[f"{lab}{side}_up"] = (parent, (s * 0.27, y, 1.40))
-            b[f"{lab}{side}_lo"] = (f"{lab}{side}_up", (s * 0.28, y + 0.02, 0.84 if lab == "f" else 0.87))
-    return b
+def lr(side):          # leg side tag -> x sign (left = -X)
+    return -1.0 if side == "l" else 1.0
 
 
-def ibex_bone_of(name, c):
-    n = name.lower()
-    if "horn" in n:
-        return "horn_l" if n.endswith("_l") or "_l" in n.split("horn")[-1] else "horn_r"
-    if n.startswith("ear"):
-        return "ear_l" if n.endswith("_l") else "ear_r"
-    if n.startswith("tail"):
-        return "tail"
-    for lab in ("f", "h"):
+def deer():
+    parts = []
+    brown, cream = np.array([0.69, 0.37, 0.15]), np.array([0.93, 0.87, 0.76])
+    dark = np.array([0.16, 0.12, 0.10])
+    # torso -------------------------------------------------------------
+    st = [(-0.52, 0.91, .05, .08), (-0.46, 0.90, .12, .16), (-0.30, 0.82, .15, .20), (-0.08, 0.79, .145, .21), (0.14, 0.79, .15, .22),
+          (0.32, 0.80, .15, .23), (0.45, 0.85, .12, .19), (0.55, 0.91, .08, .12)]
+    path = [P(0, y, f) for f, y, w, h in st]
+    m = tube(path, [s[2] for s in st], [s[3] for s in st], seg=18, sub=6)
+
+    def torso_col(p, n):
+        f = -p[:, 2]
+        c = mix(brown, cream, ss(0.15, -0.75, n[:, 1]))
+        c = mix(c, cream, ss(0.40, 0.52, f) * ss(0.5, -0.2, n[:, 1]) * 0.9)         # pale throat / chest front
+        c = mix(c, cream, ss(-0.36, -0.52, f) * ss(0.3, -0.5, n[:, 1]) * 0.8)         # pale rump underside
+        return c * (1 - 0.14 * ss(0.5, 1.0, n[:, 1]))[:, None]
+    parts.append(Part("spine", m, torso_col, "torso"))
+    for sx in (-1, 1):                                        # haunch and shoulder muscle
+        parts.append(Part("spine", ell(P(sx * .09, .76, -.33), (.06, .18, .19), 2, rotx(-0.15)), lambda p, n: mix(brown, cream, ss(0.1, -0.7, n[:, 1]) * 0.8), "haunch"))
+        parts.append(Part("spine", ell(P(sx * .105, .74, .30), (.06, .19, .14), 2, rotx(0.2)), lambda p, n: mix(brown, cream, ss(0.1, -0.7, n[:, 1]) * 0.8), "shoulder"))
+    # neck (white throat, brown crest) ------------------------------------
+    path = [P(0, 0.90, 0.38), P(0, 1.04, 0.52), P(0, 1.22, 0.66), P(0, 1.38, 0.78)]
+    m = tube(path, [.115, .085, .065, .056], [.15, .11, .08, .068], seg=14, sub=6)
+
+    def neck_col(p, n):
+        c = mix(cream, brown, ss(0.15, 0.85, n[:, 1] + 0.35 * np.clip(-n[:, 2] * 0, 0, 1)))
+        return mix(c, brown, ss(0.95, 0.80, p[:, 1]) * 0.8)                           # base blends into the shoulder
+    parts.append(Part("neck", m, neck_col, "neck"))
+    # head ------------------------------------------------------------------
+    path = [P(0, 1.38, 0.76), P(0, 1.35, 0.86), P(0, 1.28, 0.97), P(0, 1.23, 1.08)]
+    m = tube(path, [.060, .058, .045, .030], [.074, .068, .052, .036], seg=14, sub=6)
+
+    def head_col(p, n):
+        f = -p[:, 2]
+        c = mix(brown, cream, ss(-0.1, -0.8, n[:, 1]) * 0.6)
+        c = mix(c, cream, ss(0.93, 1.03, f) * 0.85)                                   # pale muzzle
+        return mix(c, dark, ss(1.07, 1.10, f))                                       # nose tip
+    parts.append(Part("head", m, head_col, "head"))
+    for sx in (-1, 1):
+        parts.append(Part("head", ell(P(sx * 0.052, 1.355, 0.93), (.026, .020, .03), 1), flat((0.95, 0.9, 0.82)), "eye_ring"))
+        parts.append(Part("head", ell(P(sx * 0.056, 1.355, 0.945), (.016, .016, .018), 1), flat((0.05, 0.04, 0.04)), "eye"))
+        ear = ell(P(sx * 0.105, 1.50, 0.76), (.012, .08, .036), 2, rotz(sx * 0.55) @ rotx(-0.25))
+        parts.append(Part("ear_l" if sx < 0 else "ear_r", ear, lambda p, n: mix(brown, np.array([0.85, 0.6, 0.55]), ss(0.0, 0.7, np.abs(n[:, 0]) * 0 + 0.5 + 0 * n[:, 1])), "ear"))
+    parts.append(Part("head", ell(P(0, 1.235, 1.10), (.030, .022, .026), 1), flat(dark), "nose"))
+    # tail ----------------------------------------------------------------
+    parts.append(Part("tail", ell(P(0, 0.93, -0.58), (.03, .06, .05), 1, rotx(0.5)), flat(cream), "tail"))
+    # antlers ---------------------------------------------------------------
+    ant_col = lambda p, n: mix(np.array([0.55, 0.42, 0.30]), np.array([0.90, 0.85, 0.74]), ss(1.52, 1.78, p[:, 1]))
+    for sx in (-1, 1):
+        def A(x, y, f):
+            return P(sx * x, y, f)
+        beam = [A(.04, 1.42, .82), A(.08, 1.60, .78), A(.15, 1.78, .73), A(.26, 1.90, .77), A(.40, 1.98, .87)]
+        parts.append(Part("horn_l" if sx < 0 else "horn_r", tube(beam, [.022, .02, .017, .014, .008], seg=8, sub=5, ref=(1, 0, 0)), ant_col, "beam"))
+        for tine in ([A(.08, 1.60, .78), A(.10, 1.82, .84), A(.10, 1.95, .86)], [A(.15, 1.78, .73), A(.17, 2.0, .78), A(.16, 2.12, .80)],
+                     [A(.26, 1.90, .77), A(.29, 2.08, .84)]):
+            rr = [.014, .011, .005] if len(tine) == 3 else [.013, .005]
+            parts.append(Part("horn_l" if sx < 0 else "horn_r", tube(tine, rr, seg=8, sub=4, ref=(1, 0, 0)), ant_col, "tine"))
+    # legs ------------------------------------------------------------------
+    legs(parts, front=dict(hip=(.33, .70), knee=(.35, .44), fet=(.36, .12), hoof=(.375, .0), thick=(.052, .036), cannon=(.036, .026), x=.095),
+         hind=dict(hip=(-.34, .78), stifle=(-.25, .55), hock=(-.40, .37), fet=(-.40, .12), hoof=(-.39, .0), thick=(.095, .042), cannon=(.036, .026), x=.105),
+         upper=lambda p, n: mix(mix(brown, cream, ss(0.62, 0.36, p[:, 1])), cream, ss(0.2, -0.8, n[:, 0] * np.sign(p[:, 0] + 1e-9))),
+         lower=lambda p, n: mix(np.array([0.90, 0.83, 0.70]), np.array([0.62, 0.45, 0.30]), ss(0.4, 1.0, n[:, 2] * -1) * 0.25),
+         hoof=dark, hoofsize=(.032, .036, .046), sock=None)
+    bones = {"root": (None, (0, 0, 0)), "spine": ("root", (0, .80, .10)), "chest": ("spine", (0, .80, -.30)), "neck": ("chest", (0, .90, -.38)),
+             "head": ("neck", (0, 1.38, -.76)), "tail": ("spine", (0, .95, .52)),
+             "ear_l": ("head", (-.07, 1.44, -.76)), "ear_r": ("head", (.07, 1.44, -.76)), "horn_l": ("head", (-.04, 1.42, -.82)), "horn_r": ("head", (.04, 1.42, -.82))}
+    leg_bones(bones, front=dict(hip=(.33, .70), knee=(.35, .44), fet=(.36, .12), x=.095), hind=dict(hip=(-.34, .78), knee=(-.40, .37), fet=(-.40, .12), x=.105))
+    return parts, bones
+
+
+def ibex():
+    parts = []
+    tan, belly = np.array([0.60, 0.40, 0.23]), np.array([0.88, 0.80, 0.66])
+    dark, horn = np.array([0.13, 0.10, 0.08]), np.array([0.30, 0.22, 0.15])
+    st = [(-0.50, 0.87, .06, .10), (-0.42, 0.85, .14, .19), (-0.24, 0.80, .17, .23), (0.0, 0.77, .175, .24), (0.25, 0.79, .175, .25),
+          (0.42, 0.84, .15, .22), (0.54, 0.91, .10, .15)]
+    m = tube([P(0, y, f) for f, y, w, h in st], [s[2] for s in st], [s[3] for s in st], seg=18, sub=6)
+
+    def torso_col(p, n):
+        f = -p[:, 2]
+        c = mix(tan, belly, ss(0.0, -0.6, n[:, 1]))
+        c = mix(c, np.array([0.80, 0.66, 0.46]), ss(0.15, 0.35, f) * ss(0.5, -0.3, np.abs(n[:, 0]) * -1 + 0.7) * 0.6)    # lighter shoulder
+        return c * (1 - 0.30 * ss(0.6, 1.0, n[:, 1]))[:, None]                      # dark dorsal stripe
+    parts.append(Part("spine", m, torso_col, "torso"))
+    for sx in (-1, 1):
+        parts.append(Part("spine", ell(P(sx * .11, .76, -.34), (.07, .19, .20), 2, rotx(-0.15)), lambda p, n: mix(tan, belly, ss(0.1, -0.7, n[:, 1]) * 0.8), "haunch"))
+        parts.append(Part("spine", ell(P(sx * .125, .74, .31), (.07, .20, .15), 2, rotx(0.2)), lambda p, n: mix(np.array([0.78, 0.64, 0.45]), belly, ss(0.1, -0.7, n[:, 1]) * 0.8), "shoulder"))
+    neck = tube([P(0, .92, .36), P(0, 1.08, .56), P(0, 1.22, .68), P(0, 1.30, .74)], [.125, .10, .08, .07], [.16, .125, .10, .09], seg=14, sub=6)
+    parts.append(Part("neck", neck, lambda p, n: mix(mix(np.array([0.72, 0.55, 0.38]), belly, ss(0.2, -0.6, n[:, 1]) * 0.7), tan, ss(0.95, 0.8, p[:, 1]) * 0.7), "neck"))
+    head = tube([P(0, 1.30, .72), P(0, 1.27, .83), P(0, 1.20, .94), P(0, 1.14, 1.04)], [.070, .066, .052, .040], [.088, .080, .060, .044], seg=14, sub=6)
+
+    def head_col(p, n):
+        f = -p[:, 2]
+        c = mix(np.array([0.80, 0.68, 0.50]), tan, ss(0.4, 1.0, n[:, 1]) * 0.35)
+        c = mix(c, np.array([0.88, 0.80, 0.66]), ss(0.92, 1.0, f) * 0.6)
+        return mix(c, dark, ss(1.02, 1.05, f))
+    parts.append(Part("head", head, head_col, "head"))
+    for sx in (-1, 1):
+        parts.append(Part("head", ell(P(sx * .056, 1.255, .85), (.022, .019, .028), 1), flat((0.90, 0.84, 0.70)), "eye_ring"))
+        parts.append(Part("head", ell(P(sx * .060, 1.255, .865), (.014, .014, .017), 1), flat((0.05, 0.04, 0.04)), "eye"))
+        parts.append(Part("ear_l" if sx < 0 else "ear_r", ell(P(sx * .12, 1.34, .66), (.012, .05, .035), 2, rotz(sx * 0.9) @ rotx(-0.2)), flat((0.66, 0.50, 0.34)), "ear"))
+    parts.append(Part("head", ell(P(0, 1.14, 1.06), (.034, .024, .028), 1), flat(dark), "nose"))
+    beard = tube([P(0, 1.10, .98), P(0, 1.02, .95), P(0, .93, .92)], [.016, .020, .008], [.016, .030, .008], seg=8, sub=4)
+    parts.append(Part("head", beard, flat((0.20, 0.14, 0.10)), "beard"))
+    parts.append(Part("tail", ell(P(0, .93, -.56), (.03, .075, .04), 1, rotx(0.35)), flat(tan * 0.9), "tail"))
+    parts.append(Part("tail", ell(P(0, .87, -.60), (.028, .05, .036), 1, rotx(0.35)), flat(dark), "tail_tip"))
+    for sx in (-1, 1):
+        def A(x, y, f):
+            return P(sx * x, y, f)
+        hp = [A(.05, 1.37, .72), A(.07, 1.52, .66), A(.10, 1.68, .55), A(.12, 1.80, .38), A(.13, 1.86, .16), A(.13, 1.84, -.07), A(.12, 1.74, -.25), A(.11, 1.60, -.36)]
+        parts.append(Part("horn_l" if sx < 0 else "horn_r", tube(hp, [.060, .056, .050, .042, .035, .028, .020, .010], seg=12, sub=7, ref=(1, 0, 0), ridge=(0.10, 11.0)),
+                          lambda p, n: mix(horn, np.array([0.55, 0.45, 0.33]), ss(1.6, 1.38, p[:, 1]) * 0.5), "horn"))
+    sock = lambda p, n: np.tile(np.array([0.9, 0.88, 0.82]), (len(p), 1))
+    legs(parts, front=dict(hip=(.33, .70), knee=(.35, .43), fet=(.36, .12), hoof=(.375, .0), thick=(.062, .046), cannon=(.040, .030), x=.105),
+         hind=dict(hip=(-.34, .78), stifle=(-.25, .55), hock=(-.40, .38), fet=(-.40, .12), hoof=(-.39, .0), thick=(.10, .048), cannon=(.038, .028), x=.11),
+         upper=lambda p, n: mix(tan, belly, ss(0.2, -0.8, n[:, 0] * np.sign(p[:, 0] + 1e-9)) * 0.8),
+         lower=lambda p, n: mix(mix(np.array([0.84, 0.78, 0.66]), np.array([0.18, 0.13, 0.10]), ss(-0.1, 0.8, n[:, 2] * -1 + 0.0)), np.array([0.90, 0.88, 0.82]), ss(0.20, 0.12, p[:, 1])),
+         hoof=dark, hoofsize=(.036, .036, .05), sock=sock)
+    bones = {"root": (None, (0, 0, 0)), "spine": ("root", (0, .80, .12)), "chest": ("spine", (0, .80, -.30)), "neck": ("chest", (0, .92, -.36)),
+             "head": ("neck", (0, 1.30, -.72)), "tail": ("spine", (0, .93, .50)),
+             "ear_l": ("head", (-.08, 1.34, -.70)), "ear_r": ("head", (.08, 1.34, -.70)), "horn_l": ("head", (-.045, 1.37, -.72)), "horn_r": ("head", (.045, 1.37, -.72))}
+    leg_bones(bones, front=dict(hip=(.33, .70), knee=(.35, .43), fet=(.36, .12), x=.105), hind=dict(hip=(-.34, .78), knee=(-.40, .38), fet=(-.40, .12), x=.11))
+    scale_all(parts, bones, 0.86)
+    return parts, bones
+
+
+def leg_bones(bones, front, hind):
+    for lab, d in (("f", front), ("h", hind)):
+        parent = "chest" if lab == "f" else "spine"
         for side in ("l", "r"):
-            if n.endswith(f"_{lab}{side}"):
-                return f"{lab}{side}_up" if n.startswith("legupper") else f"{lab}{side}_lo"   # knee, lower, hoof, toes
-    if any(k in n for k in ("head", "muzzle", "nose", "eye", "beard")):
-        return "head"
-    if n == "neck":
-        return "neck"
-    if n == "chest":
-        return "chest"
-    if n.startswith("rump") or n.startswith("dorsal") or n.startswith("flank"):
-        return "pelvis" if n.startswith("rump") else "spine"
-    return "spine"
+            x = lr(side) * d["x"]
+            bones[f"{lab}{side}_up"] = (parent, P(x, d["hip"][1], d["hip"][0]))
+            bones[f"{lab}{side}_lo"] = (f"{lab}{side}_up", P(x, d["knee"][1], d["knee"][0]))
+            bones[f"{lab}{side}_ft"] = (f"{lab}{side}_lo", P(x, d["fet"][1], d["fet"][0]))
 
 
-ANIMALS = {
-    "deer": {"src": "stylized_forest_deer.glb", "conv": conv_deer, "bones": deer_bones, "bone_of": deer_bone_of},
-    "ibex": {"src": "nubian_ibex_game_character.glb", "conv": conv_ibex, "bones": ibex_bones, "bone_of": ibex_bone_of},
-}
+def legs(parts, front, hind, upper, lower, hoof, hoofsize, sock):
+    for lab, d in (("f", front), ("h", hind)):
+        for side in ("l", "r"):
+            x = lr(side) * d["x"]
+            b = f"{lab}{side}"
+            if lab == "f":
+                up = [P(x, d["hip"][1] + .04, d["hip"][0] - .02), P(x, (d["hip"][1] + d["knee"][1]) / 2, (d["hip"][0] + d["knee"][0]) / 2), P(x, d["knee"][1], d["knee"][0])]
+                ru = [d["thick"][0], (d["thick"][0] + d["thick"][1]) / 2, d["thick"][1]]
+            else:
+                up = [P(x * 1.1, d["hip"][1] + .02, d["hip"][0] + .02), P(x, d["stifle"][1], d["stifle"][0]), P(x * .9, d["hock"][1], d["hock"][0])]
+                ru = [d["thick"][0], d["thick"][0] * .72, d["thick"][1]]
+            parts.append(Part(b + "_up", tube(up, ru, [r * (1.15 if lab == "h" else 1.0) for r in ru], seg=10, sub=6, ref=(1, 0, 0)), upper, "leg_up"))
+            k = d["knee"] if lab == "f" else d["hock"]
+            lo = [P(x, k[1] + .02, k[0]), P(x, (k[1] + d["fet"][1]) / 2, (k[0] + d["fet"][0]) / 2), P(x, d["fet"][1], d["fet"][0])]
+            parts.append(Part(b + "_lo", tube(lo, [d["cannon"][0], d["cannon"][1] * 0.9, d["cannon"][0] * 0.95], [d["cannon"][0] * 1.1, d["cannon"][1], d["cannon"][0]], seg=10, sub=5, ref=(1, 0, 0)), lower, "leg_lo"))
+            parts.append(Part(b + "_lo", ell(P(x, k[1], k[0]), (d["cannon"][0] * 1.3, d["cannon"][0] * 1.3, d["cannon"][0] * 1.3), 1), lambda p, n, f=upper: f(p, n), "joint"))
+            fet_col = lower
+            parts.append(Part(b + "_ft", ell(P(x, d["fet"][1] - 0.005, d["fet"][0]), (d["cannon"][0] * 1.2, d["cannon"][0] * 1.4, d["cannon"][0] * 1.4), 1), fet_col, "fetlock"))
+            hs = hoofsize
+            pas = [P(x, d["fet"][1], d["fet"][0]), P(x, d["fet"][1] * 0.5, d["fet"][0] + .012), P(x, 0.03, d["fet"][0] + .02)]
+            parts.append(Part(b + "_ft", tube(pas, [d["cannon"][0] * 1.1, d["cannon"][0] * 1.0, d["cannon"][0] * 1.1], seg=9, sub=3, ref=(1, 0, 0), caps=(False, False)), fet_col, "pastern"))
+            parts.append(Part(b + "_ft", ell(P(x, 0.032, d["fet"][0] + .026), (hs[0], 0.034, hs[2]), 2), flat(hoof), "hoof"))
+
+
+def scale_all(parts, bones, k):
+    for p in parts:
+        p.mesh = (p.mesh[0] * k, p.mesh[1], p.mesh[2])
+    for n, (par, h) in list(bones.items()):
+        bones[n] = (par, np.asarray(h, float) * k)
+    # colour functions read heights in unscaled units: wrap them
+    for p in parts:
+        f = p.color
+        p.color = (lambda pp, nn, f=f: f(pp / k, nn))
 
 
 # ------------------------------------------------------------------ build
+def shade(col, nrm, pts, rng):
+    """Baked ambient occlusion + fur variation."""
+    up = nrm[:, 1]
+    k = 0.70 + 0.30 * np.clip(up * 0.5 + 0.5, 0, 1) ** 0.9
+    k = k * (0.88 + 0.12 * np.clip(pts[:, 1] / 0.7, 0, 1))
+    k = k * (1.0 + rng.normal(0, 0.03, len(col)))
+    return np.clip(col * k[:, None], 0, 1)
+
+
 def fmt(a, nd=4):
     return ", ".join(("%.*f" % (nd, x)).rstrip("0").rstrip(".") if abs(x) > 1e-9 else "0" for x in np.asarray(a).ravel())
 
 
-def build(name, cfg):
-    parts = read_parts(os.path.join(SRC, cfg["src"]))
-    conv = cfg["conv"]
-    bones_m = cfg["bones"]()
-    head_g = {k: conv(v[1]) * SCALE for k, v in bones_m.items()}
-    order = list(bones_m.keys())
+def build(name, parts, bones):
+    order = list(bones.keys())
+    head = {k: np.asarray(v[1], float) for k, v in bones.items()}
     groups = {k: {"v": [], "n": [], "c": [], "i": [], "off": 0} for k in order}
-    tot_tris = 0
-    cross = {}
+    tot = 0
     zone_pts = {"head": [], "body": [], "legs": []}
     for part in parts:
-        centre = (part["P"].max(0) + part["P"].min(0)) / 2
-        bone = cfg["bone_of"](part["name"], centre)
-        pts, nrm, col, F = part_mesh(part)
-        g_pts = conv(pts) * SCALE
-        g_nrm = conv(nrm)
+        V, N, F = part.mesh
+        N = norm(N)
+        rng = np.random.default_rng(zlib.crc32((name + part.name).encode()) % 100000)
+        col = shade(part.color(V, N), N, V, rng)
         # winding: Godot front faces are clockwise -> (b-a)x(c-a) must point against the outward normal
-        tri = g_pts[F]
+        tri = V[F]
         gn = np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0])
-        avg = g_nrm[F].sum(axis=1)
-        flip = (gn * avg).sum(axis=1) > 0
+        flip = (gn * N[F].sum(axis=1)).sum(axis=1) > 0
         F = np.where(flip[:, None], F[:, [0, 2, 1]], F)
-        col = shade(col, g_nrm, g_pts, zlib.crc32(part["name"].encode()) % 100000)
-        ext = np.sort((part["P"].max(0) - part["P"].min(0)) / 2.0)
-        cross.setdefault(bone, []).append((float(ext[1]) * SCALE, part["C"][0]))
-        grp = groups[bone]
-        grp["v"].append(g_pts - head_g[bone])
-        grp["n"].append(g_nrm)
-        grp["c"].append(col)
-        grp["i"].append(F + grp["off"])
-        grp["off"] += len(g_pts)
-        tot_tris += len(F)
-        zk = "head" if bone in ("head",) else ("legs" if bone[1:3] in ("l_", "r_") and bone[0] in "fh" else ("body" if bone in ("spine", "chest", "neck", "pelvis") else None))
-        if zk:
-            zone_pts[zk].append(g_pts)
-    # joint balls: the ellipsoid segments only touch in points, so a swinging leg would open gaps. A ball centred on
-    # every leg pivot (child bone) keeps hip / knee / ankle visibly connected.
-    U1, F1 = icosphere(1)
-    for bone, (par, _h) in bones_m.items():
-        if len(bone) < 5 or bone[0] not in "fh" or bone[1] not in "lr" or bone[2] != "_":
-            continue
-        mine = max(cross.get(bone, [(0.03, np.array([0.5, 0.4, 0.3]))]), key=lambda t: t[0])
-        r = mine[0]
-        if bone.endswith("_lo") or bone.endswith("_ft"):
-            theirs = cross.get(par, [])
-            if theirs:
-                r = (r + max(theirs, key=lambda t: t[0])[0]) * 0.5
-        r = max(r * 1.08, 0.025)
-        nrm = U1
-        col = shade(np.tile(mine[1], (len(U1), 1)), nrm, U1 * r + head_g[bone], 7)
-        g = groups[bone]
-        tri = (U1 * r)[F1]              # Godot wants clockwise-from-outside: flip faces whose normal points outward
-        gn = np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0])
-        flip = (gn * U1[F1].sum(axis=1)).sum(axis=1) > 0
-        F = np.where(flip[:, None], F1[:, [0, 2, 1]], F1)
-        g["v"].append(U1 * r)
-        g["n"].append(nrm)
+        g = groups[part.bone]
+        g["v"].append(V - head[part.bone])
+        g["n"].append(N)
         g["c"].append(col)
         g["i"].append(F + g["off"])
-        g["off"] += len(U1)
-        tot_tris += len(F1)
+        g["off"] += len(V)
+        tot += len(F)
+        b = part.bone
+        key = "head" if b == "head" else ("legs" if len(b) > 2 and b[0] in "fh" and b[1] in "lr" and b[2] == "_" else ("body" if b in ("spine", "neck", "chest") else None))
+        if key:
+            zone_pts[key].append(V)
+        part.final = (V, N, col, F)
     zones = {}
     for k, lst in zone_pts.items():
         allp = np.concatenate(lst)
         lo, hi = allp.min(0), allp.max(0)
-        zones[k] = ((lo + hi) / 2, (hi - lo))
-    lines = ["# GENERATED by tools/build_animals.py from the supplied %s model. Do not edit by hand." % cfg["src"],
-             "# %d triangles (source model had ~%d)." % (tot_tris, sum(len(p['I']) for p in parts)),
-             "extends RefCounted", "", "static func data() -> Dictionary:", "\treturn {"]
-    lines.append('\t\t"bones": [')
+        zones[k] = ((lo + hi) / 2, np.maximum(hi - lo, 0.08))
+    lines = ["# GENERATED by tools/build_animals.py (procedural %s). Do not edit by hand." % name,
+             "# %d triangles." % tot, "extends RefCounted", "", "static func data() -> Dictionary:", "\treturn {", '\t\t"bones": [']
     for k in order:
-        par = bones_m[k][0]
-        rel = head_g[k] - (head_g[par] if par else 0)
+        par = bones[k][0]
+        rel = head[k] - (head[par] if par else 0)
         lines.append('\t\t\t{"name": "%s", "parent": "%s", "pos": Vector3(%s)},' % (k, par or "", fmt(rel)))
-    lines.append("\t\t],")
-    lines.append('\t\t"meshes": {')
+    lines += ["\t\t],", '\t\t"meshes": {']
     for k in order:
         g = groups[k]
         if not g["v"]:
             continue
-        v = np.concatenate(g["v"])
-        n = np.concatenate(g["n"])
-        c = np.concatenate(g["c"])
-        i = np.concatenate(g["i"]).ravel()
         lines.append('\t\t\t"%s": {' % k)
-        lines.append('\t\t\t\t"v": PackedFloat32Array([%s]),' % fmt(v))
-        lines.append('\t\t\t\t"n": PackedFloat32Array([%s]),' % fmt(n, 3))
-        lines.append('\t\t\t\t"c": PackedFloat32Array([%s]),' % fmt(c, 3))
-        lines.append('\t\t\t\t"i": PackedInt32Array([%s]),' % ", ".join(str(int(x)) for x in i))
+        lines.append('\t\t\t\t"v": PackedFloat32Array([%s]),' % fmt(np.concatenate(g["v"])))
+        lines.append('\t\t\t\t"n": PackedFloat32Array([%s]),' % fmt(np.concatenate(g["n"]), 3))
+        lines.append('\t\t\t\t"c": PackedFloat32Array([%s]),' % fmt(np.concatenate(g["c"]), 3))
+        lines.append('\t\t\t\t"i": PackedInt32Array([%s]),' % ", ".join(str(int(x)) for x in np.concatenate(g["i"]).ravel()))
         lines.append("\t\t\t},")
-    lines.append("\t\t},")
-    lines.append('\t\t"zones": {')
+    lines += ["\t\t},", '\t\t"zones": {']
     for k, (c, s) in zones.items():
-        lines.append('\t\t\t"%s": {"pos": Vector3(%s), "size": Vector3(%s)},' % (k, fmt(c, 3), fmt(np.maximum(s, 0.08), 3)))
-    lines.append("\t\t},")
-    lines.append("\t}")
+        lines.append('\t\t\t"%s": {"pos": Vector3(%s), "size": Vector3(%s)},' % (k, fmt(c, 3), fmt(s, 3)))
+    lines += ["\t\t},", "\t}"]
     os.makedirs(OUT, exist_ok=True)
     path = os.path.join(OUT, "%s_data.gd" % name)
     open(path, "w", encoding="utf-8").write("\n".join(lines) + "\n")
-    print("%s: %d triangles (from %d), %d bones, %.0f KB -> %s" % (name, tot_tris, sum(len(p['I']) for p in parts), len(order), os.path.getsize(path) / 1024, os.path.relpath(path)))
-    mins = np.min([np.concatenate(g["v"]).min(0) + head_g[k] for k, g in groups.items() if g["v"]], axis=0)
-    maxs = np.max([np.concatenate(g["v"]).max(0) + head_g[k] for k, g in groups.items() if g["v"]], axis=0)
-    print("   game-space bounds min", mins.round(2), "max", maxs.round(2))
+    allv = np.concatenate([p.final[0] for p in parts])
+    print("%s: %d triangles, %d bones, %.0f KB; bounds min %s max %s" % (name, tot, len(order), os.path.getsize(path) / 1024, allv.min(0).round(2), allv.max(0).round(2)))
+
+
+def preview(name, parts, view="side", yaw=0.0):
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from matplotlib.collections import PolyCollection
+    polys, cols, depth = [], [], []
+    ldir = norm(np.array([0.5, 0.8, -0.6]))
+    for part in parts:
+        V, N, C, F = part.final
+        if yaw:
+            R = roty(yaw)
+            V, N = V @ R.T, N @ R.T
+        for tri in F:
+            a, b, c = V[tri]
+            nn = N[tri].mean(0)
+            if view == "side":
+                if nn[0] < -0.2:
+                    continue
+                pts2 = [(-v[2], v[1]) for v in (a, b, c)]
+                d = (a[0] + b[0] + c[0]) / 3
+            else:
+                if nn[2] > 0.2:
+                    continue
+                pts2 = [(v[0], v[1]) for v in (a, b, c)]
+                d = -(a[2] + b[2] + c[2]) / 3
+            lam = 0.55 + 0.45 * max(0.0, float(np.dot(norm(nn), ldir)))
+            polys.append(pts2)
+            cols.append(tuple(np.clip(C[tri].mean(0) * lam * 1.25, 0, 1)))
+            depth.append(d)
+    order = np.argsort(depth)
+    fig, ax = plt.subplots(figsize=(8, 6), dpi=110)
+    ax.set_facecolor("#33383c")
+    ax.add_collection(PolyCollection([polys[i] for i in order], facecolors=[cols[i] for i in order], edgecolors="none"))
+    ax.set_xlim(-1.4, 1.4)
+    ax.set_ylim(-0.05, 2.1)
+    ax.set_aspect("equal")
+    ax.axis("off")
+    fig.patch.set_facecolor("#33383c")
+    out = os.path.join(ROOT, "preview_%s_%s.png" % (name, view))
+    fig.savefig(out, facecolor=fig.get_facecolor())
+    plt.close(fig)
+    print("preview ->", out)
 
 
 if __name__ == "__main__":
-    for nm, cf in ANIMALS.items():
-        build(nm, cf)
+    for nm, fn in (("deer", deer), ("ibex", ibex)):
+        prts, bns = fn()
+        build(nm, prts, bns)
+        if "--preview" in sys.argv:
+            preview(nm, prts, "side")
+            preview(nm, prts, "front")
+            preview(nm + "3q", prts, "side", 0.7)

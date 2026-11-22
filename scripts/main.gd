@@ -418,6 +418,8 @@ func _on_action(a: String) -> void:
 				hunt.cycle_weapon()
 				if GameState.weapon_idx == before:      # next one is locked: put the weapon away
 					GameState.equip = "none"
+			if GameState.equip != "weapon" and hunt.aiming:
+				hunt.toggle_aim()
 			_equip_text()
 		"speed": hunt.speedup()
 		"sens":
@@ -570,6 +572,8 @@ func _torch() -> void:
 	player.torch.visible = not player.torch.visible
 
 func _interact() -> void:
+	if hunt.try_deliver():
+		return
 	if home.interact(player.global_position):
 		player.play_action("gather", 0.8)
 		return
@@ -702,6 +706,8 @@ func _prompt() -> String:
 	if player.intro_lock or ui.in_puzzle:
 		return ""
 	var pos: Vector3 = player.global_position
+	if hunt.near_barn() and not hunt.drag_busy:
+		return "تفاعل: اربط الغزال في الحظيرة"
 	var h: String = home.hint(pos)
 	if h != "":
 		return h

@@ -89,6 +89,8 @@ func _transit() -> void:
 
 func transit_text() -> String:
 	if drag_node != null:
+		if near_barn():
+			return "في الحظيرة — اضغط «تفاعل» لربط الغزال"
 		var left := 0.0
 		if barn != null:
 			left = Vector2(drag_node.global_position.x - barn.center.x, drag_node.global_position.z - barn.center.z).length()
@@ -370,8 +372,24 @@ func _update_drag(d: float) -> void:
 		(drag_rope.mesh as BoxMesh).size = Vector3(0.03, 0.03, ln)
 		drag_rope.global_position = (a + front) * 0.5
 		drag_rope.look_at(front, Vector3.UP)
-	if barn != null and GameState.barn_built and Vector2(dp.x - barn.center.x, dp.z - barn.center.z).length() < 6.0:
+	if near_barn():
 		_deliver_drag()
+
+## True when the sled (or the player) is in the barn yard.
+func near_barn() -> bool:
+	if drag_node == null or barn == null:
+		return false
+	var dp: Vector3 = drag_node.global_position
+	var pp: Vector3 = player.global_position
+	var c: Vector3 = barn.center
+	return Vector2(dp.x - c.x, dp.z - c.z).length() < 8.5 or Vector2(pp.x - c.x, pp.z - c.z).length() < 7.0
+
+## «تفاعل» near the barn while pulling the sled: tie the animal up right away.
+func try_deliver() -> bool:
+	if drag_node == null or drag_busy or not near_barn():
+		return false
+	_deliver_drag()
+	return true
 
 func _deliver_drag() -> void:
 	drag_busy = true
