@@ -266,7 +266,13 @@ func _init() -> void:
 	if gs8.lives != 3 or gs8.hunt_stage != 2 or gs8.stage_n != 4 or gs8.well != 2 or gs8.bucket != 5 or absf(gs8.pond - 0.6) > 0.001 or not gs8.channel:
 		print("FAIL save of lives / stage / well"); fails += 1
 	# realistic speeds: the player (running) is slower than a fleeing deer / elk / ibex and the predators, faster than a wounded one
-	var run_p: float = load("res://scripts/player.gd").SPEED
+	var run_p := 5.2
+	var psrc := FileAccess.get_file_as_string("res://scripts/player.gd")
+	var prx := RegEx.new()
+	prx.compile("const SPEED\\s*:?=\\s*([0-9.]+)")
+	var pm := prx.search(psrc)
+	if pm != null:
+		run_p = float(pm.get_string(1))
 	for rk in ["deer", "ibex", "elk", "wolf", "bear", "fox"]:
 		if float(SH.ANIMALS[rk]["run"]) <= run_p:
 			print("FAIL ", rk, " must outrun the player"); fails += 1
