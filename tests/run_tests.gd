@@ -4,7 +4,7 @@ func _init() -> void:
 	var fails := 0
 	var D = load("res://scripts/building_data.gd")
 	var boards: Array = D.make_boards()
-	if boards.size() != 29:
+	if boards.size() != 31:
 		print("FAIL boards: ", boards.size()); fails += 1
 	if boards[2].pieces.size() != 50:
 		print("FAIL back facade should have 50 pieces: ", boards[2].pieces.size()); fails += 1

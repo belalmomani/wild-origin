@@ -19,7 +19,7 @@ static func day_of(hours: float) -> int:
 	return int(floor(hours / 24.0))
 
 static func season(day: int) -> int:
-	return posmod(day / DAYS_PER_SEASON, 4)
+	return posmod(floori(float(day) / DAYS_PER_SEASON), 4)
 
 static func season_name(day: int) -> String:
 	return SEASONS[season(day)]
