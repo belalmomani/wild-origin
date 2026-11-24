@@ -151,7 +151,7 @@ func _smoke() -> void:
 			seen += 1
 			pa.tick(0.1, player.global_position, false, world)
 			if pa.gl == null or pa.gl.ap == null or not pa.gl.has_clip("cycle_walk") or not pa.gl.has_clip("idle_breathe"):
-				print("SMOKE FAIL: predator model ", pa.kind)
+				print("SMOKE FAIL: predator model ", pa.kind, " gl=", pa.gl != null, " ap=", pa.gl != null and pa.gl.ap != null, " clips=", pa.gl.clips.keys() if pa.gl != null else [])
 				get_tree().quit(1)
 				return
 	var bird = hunt.first_of("bird")

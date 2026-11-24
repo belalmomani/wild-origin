@@ -5,6 +5,7 @@ const SCENES := {
 	"wolf": preload("res://assets/animals/wolf.glb"),
 	"bear": preload("res://assets/animals/bear.glb"),
 }
+const KNOWN := ["cycle_walk", "cycle_run", "cycle_trot", "cycle_sneak", "death_neutral", "idle_breathe", "idle_specific_01"]
 const LOOPING := ["cycle_walk", "cycle_run", "cycle_trot", "cycle_sneak", "idle_breathe", "idle_specific_01"]
 var holder: Node3D
 var ap: AnimationPlayer
@@ -26,6 +27,10 @@ static func build(kind: String, parent: Node3D, scale_f: float, tint: Color = Co
 		for n in r.ap.get_animation_list():
 			var low := String(n).to_lower()
 			var short := low.get_slice("@", 1) if low.contains("@") else low
+			for kn in KNOWN:                   # the importer may have rewritten "@": match by suffix
+				if low.ends_with(kn):
+					short = kn
+					break
 			r.clips[short] = n
 			var an: Animation = r.ap.get_animation(n)
 			an.loop_mode = Animation.LOOP_LINEAR if LOOPING.has(short) else Animation.LOOP_NONE
