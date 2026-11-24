@@ -219,6 +219,11 @@ func _tend_fire() -> void:
 		GameState.xp += 2
 		message.emit("طبختَ وجبة لحم على النار ✓ (+2 خبرة)")
 		return
+	if fuel >= 6.0 and GameState.count("fish") > 0:
+		GameState.spend("fish", 1)
+		GameState.xp += 3
+		message.emit("شويتَ سمكة على النار ✓ (+3 خبرة)")
+		return
 	if fuel >= FUEL_MAX - FUEL_PER_WOOD + 0.5:
 		message.emit("النار مشتعلة بقوة")
 		return
@@ -234,4 +239,4 @@ func info_text(pos: Vector3) -> String:
 		return ""
 	var f: float = GameState.fire_fuel
 	var n := int(round(clampf(f / FUEL_MAX, 0.0, 1.0) * 10.0))
-	return "الموقد: %s %d ساعة | خشب %d | لحم %d" % ["█".repeat(n) + "░".repeat(10 - n), int(f), GameState.count("wood"), GameState.count("meat")]
+	return "الموقد: %s %d ساعة | خشب %d | لحم %d | سمك %d" % ["█".repeat(n) + "░".repeat(10 - n), int(f), GameState.count("wood"), GameState.count("meat"), GameState.count("fish")]

@@ -6,6 +6,9 @@ signal message(text: String)
 signal aim_changed(on: bool)
 signal sound(name: String)
 signal scope_changed(on: bool)
+signal aim_color_changed(c: Color)
+signal player_hurt
+signal player_down
 const L := preload("res://scripts/hunt_logic.gd")
 const AnimalS := preload("res://scripts/animal.gd")
 const BL := preload("res://scripts/barn_logic.gd")
@@ -18,6 +21,12 @@ var drag_animal = null
 var drag_rope: MeshInstance3D = null
 var drag_busy := false
 var animals: Array = []
+var pond                            # the lake (set by main): wild animals and birds gather there to drink
+var gate_open_cb := Callable()     # set by main: is the farm gate open? (predators can walk in then)
+var inv_t := 0.0                    # the player cannot lose another life for a moment after an attack
+var _aim_t := 0.0
+var _pred_t := 3.0
+const WILD := {"deer": 8, "ibex": 5, "elk": 6, "chicken": 10, "turkey": 6, "bird": 6}
 var aiming := false
 var scoped := false
 var cooldown := 0.0
@@ -30,6 +39,12 @@ func _ready() -> void:
 		_spawn("deer")
 	for i in 5:
 		_spawn("ibex")
+	for i in 6:
+		_spawn("elk")
+	for i in 6:
+		_spawn("turkey")
+	for i in 6:
+		_spawn("bird")
 	for i in 10:
 		_spawn("chicken")
 	Ads.reward_granted.connect(_on_reward)
@@ -46,6 +61,12 @@ func _spawn(kind: String) -> void:
 		p = -p
 	a.position = Vector3(p.x, world.height_at(p.x, p.y), p.y)
 	a.rotation.y = _rng.randf() * TAU
+	if kind == "bird":
+		var c := Vector3(_rng.randf_range(-50, 50), 0, _rng.randf_range(-50, 50))
+		a.circ_c = Vector3(c.x, world.height_at(c.x, c.z), c.z)
+		a.circ_r = _rng.randf_range(9.0, 16.0)
+		a.circ_a = _rng.randf() * TAU
+		a.alt = _rng.randf_range(13.0, 20.0)
 	add_child(a)
 	animals.append(a)
 
@@ -57,7 +78,13 @@ func first_of(kind: String):
 
 func _process(d: float) -> void:
 	cooldown -= d
+	inv_t -= d
 	_update_drag(d)
+	_pred_frame(d)
+	_aim_t -= d
+	if aiming and _aim_t <= 0.0:
+		_aim_t = 0.1
+		aim_color_changed.emit(aim_color())
 	for a in animals:
 		if is_instance_valid(a):
 			a.tick(d, player.global_position, player.crouch, world)
@@ -66,6 +93,9 @@ func _process(d: float) -> void:
 		_t = 0.0
 		_cleanup()
 		_transit()
+		_maintain()
+		_pred_manage()
+		_pond_update()
 
 func _cleanup() -> void:
 	for a in animals.duplicate():
@@ -75,7 +105,8 @@ func _cleanup() -> void:
 			var k: String = a.kind
 			animals.erase(a)
 			a.queue_free()
-			_spawn(k)
+			if not L.is_predator(k):
+				_spawn(k)
 
 func _transit() -> void:
 	var now := Time.get_unix_time_from_system()
@@ -85,16 +116,17 @@ func _transit() -> void:
 			var k: String = str(e.kind)
 			GameState.pen.append(BL.new_animal(GameState.next_pen_id, k, GameState.clock_hours / 24.0))
 			GameState.next_pen_id += 1
-			message.emit("وصل %s إلى الحظيرة ✓" % L.ANIMALS[k]["name"])
+			message.emit("وصل %s إلى %s ✓" % [L.ANIMALS[k]["name"], "الحظيرة" if BL.is_poultry(k) else "المزرعة"])
+			_stage_progress(k)
 
 func transit_text() -> String:
 	if drag_node != null:
 		if near_barn():
-			return "في الحظيرة — اضغط «تفاعل» لربط الغزال"
+			return "في المزرعة — اضغط «تفاعل» لفكّ %s" % L.ANIMALS[GameState.drag_kind]["name"]
 		var left := 0.0
 		if barn != null:
-			left = Vector2(drag_node.global_position.x - barn.center.x, drag_node.global_position.z - barn.center.z).length()
-		return "تجرّ غزالًا إلى الحظيرة — تبقّى %d م" % int(left)
+			left = Vector2(drag_node.global_position.x - barn.farm_center.x, drag_node.global_position.z - barn.farm_center.z).length()
+		return ("تجرّ %s إلى المزرعة — تبقّى %d م" % [L.ANIMALS[GameState.drag_kind]["name"], int(left)]) + ("" if GameState.farm_built else "\nأكمل بناء سور المزرعة وبوابتها أولًا")
 	if GameState.livestock.is_empty():
 		return ""
 	var e: Dictionary = GameState.livestock[0]
@@ -198,6 +230,15 @@ func fire() -> void:
 	GameState.spend(ammo, 1)
 	cooldown = 0.7
 	sound.emit("shot_sling" if wid == "slingshot" else "shot_bow")
+	var h := _aim_ray()
+	if h.is_empty():
+		message.emit("أخطأت")
+		return
+	apply_hit(h["a"], str(h["zone"]))
+
+## What the crosshair points at: {"a": animal, "zone": "head"/"body"/"legs"} or {}.
+func _aim_ray() -> Dictionary:
+	var w: Dictionary = L.WEAPONS[GameState.weapons[GameState.weapon_idx]]
 	var cam: Camera3D = player.cam
 	var c := cam.get_viewport().get_visible_rect().size * 0.5
 	var o := cam.project_ray_origin(c)
@@ -206,14 +247,25 @@ func fire() -> void:
 	q.exclude = [player.get_rid()]
 	var hit := get_world_3d().direct_space_state.intersect_ray(q)
 	if hit.is_empty() or not (hit["collider"] is Area3D):
-		message.emit("أخطأت")
-		return
+		return {}
 	var area := hit["collider"] as Area3D
 	var a = area.get_parent()
 	if a == null or not a.is_in_group("animal") or a.dead:
-		message.emit("أخطأت")
-		return
-	apply_hit(a, str(area.get_meta("zone")))
+		return {}
+	return {"a": a, "zone": str(area.get_meta("zone"))}
+
+## Crosshair colour: RED when this shot would kill, GREEN when it would only wound an animal you can catch alive.
+func aim_color() -> Color:
+	var h := _aim_ray()
+	if h.is_empty():
+		return Color(1, 1, 1)
+	var a = h["a"]
+	var r := L.shot(GameState.weapons[GameState.weapon_idx], str(h["zone"]), a.hp, a.max_hp)
+	if r["dead"]:
+		return Color(1.0, 0.15, 0.1)
+	if r["wound"] and L.capturable(GameState.hunt_stage, a.kind):
+		return Color(0.2, 1.0, 0.25)
+	return Color(1.0, 0.9, 0.3)
 
 func apply_hit(a, zone: String) -> void:
 	var wid: String = GameState.weapons[GameState.weapon_idx]
@@ -226,13 +278,19 @@ func apply_hit(a, zone: String) -> void:
 	var names := {"head": "الرأس", "body": "الجسم", "legs": "الساق"}
 	var zn: String = names[zone]
 	if r["dead"]:
-		GameState.xp += 3
+		GameState.xp += 10 if L.is_predator(a.kind) else 3
 		a.die(GameState.gentle)
+		a.has_target = false
+		if a.kind == "bird":
+			a.global_position.y = world.height_at(a.global_position.x, a.global_position.z) + 0.15
 		if GameState.gentle:
 			_loot(a)
 			message.emit("إصابة في %s — حصلتَ على الطعام" % zn)
 		else:
 			message.emit("إصابة في %s — %s سقط. اقترب واضغط «تفاعل» لجمع الطعام" % [zn, nm])
+	elif L.is_predator(a.kind):
+		a.leave_t = 0.0
+		message.emit("إصابة في %s — %s غاضب ويهاجم!" % [zn, nm])
 	elif r["wound"]:
 		a.wounded = true
 		a.state = "flee"
@@ -265,7 +323,9 @@ func interact_nearby() -> bool:
 		return false
 	if best.dead:
 		_loot(best)
-	elif best.kind == "deer":
+	elif not L.capturable(GameState.hunt_stage, best.kind):
+		message.emit("لا يمكن التقاط %s حيًّا الآن — مرحلتك: %s. ويمكنك قتله للحصول على لحمه" % [L.ANIMALS[best.kind]["name"], _stage_name()])
+	elif best.kind == "deer" or best.kind == "elk":
 		_start_drag(best)
 	else:
 		GameState.livestock.append({"kind": best.kind, "eta": Time.get_unix_time_from_system() + L.TRANSIT_SECONDS})
@@ -286,17 +346,21 @@ const DRAG_SPEED := 0.42        # walking speed while pulling the sled
 ## A wounded deer caught by hand: build a sled (wood) + rope, tie the deer onto it and drag it to the barn.
 func _start_drag(a) -> void:
 	if drag_node != null:
-		message.emit("أنت تجرّ غزالًا بالفعل — أوصله إلى الحظيرة أولًا")
+		message.emit("أنت تجرّ حيوانًا بالفعل — أوصله إلى الحظيرة أولًا")
+		return
+	if not GameState.farm_built:
+		message.emit("أكمل بناء سور المزرعة وبوابتها أولًا — هناك يعيش %s" % L.ANIMALS[a.kind]["name"])
 		return
 	if not GameState.spend("wood", SLED_WOOD):
-		message.emit("لجرّ الغزال تحتاج زلاجة وحبلًا: اقطع %d قطع خشب ثم عُد إليه" % SLED_WOOD)
+		message.emit("لجرّ %s تحتاج زلاجة وحبلًا: اقطع %d قطع خشب ثم عُد إليه" % [L.ANIMALS[a.kind]["name"], SLED_WOOD])
 		return
 	animals.erase(a)
 	a.queue_free()
-	GameState.drag_kind = "deer"
+	var kd: String = a.kind
+	GameState.drag_kind = kd
 	GameState.xp += 2
-	_make_drag("deer")
-	message.emit("صنعتَ زلاجة وربطتَ الغزال بالحبل (-%d خشب). اسحبه إلى الحظيرة — الجرّ بطيء" % SLED_WOOD)
+	_make_drag(kd)
+	message.emit("صنعتَ زلاجة وربطتَ %s بالحبل (-%d خشب). اسحبه إلى الحظيرة — الجرّ بطيء" % [L.ANIMALS[kd]["name"], SLED_WOOD])
 	if not GameState.barn_unlocked:
 		GameState.barn_unlocked = true
 		message.emit("فُتحت مهمة بناء الحظيرة! اضغط «بناء».")
@@ -381,7 +445,9 @@ func near_barn() -> bool:
 		return false
 	var dp: Vector3 = drag_node.global_position
 	var pp: Vector3 = player.global_position
-	var c: Vector3 = barn.center
+	if not GameState.farm_built:
+		return false
+	var c: Vector3 = barn.farm_center
 	return Vector2(dp.x - c.x, dp.z - c.z).length() < 10.0 or Vector2(pp.x - c.x, pp.z - c.z).length() < 9.0
 
 ## «تفاعل» near the barn while pulling the sled: tie the animal up right away.
@@ -393,7 +459,7 @@ func try_deliver() -> bool:
 
 func _deliver_drag() -> void:
 	drag_busy = true
-	message.emit("وصلتَ الحظيرة — تفكّ الحبل...")
+	message.emit("وصلتَ المزرعة — تفكّ الحبل...")
 	player.speed_mult = 1.0
 	await get_tree().create_timer(1.0).timeout
 	var k := GameState.drag_kind
@@ -410,5 +476,200 @@ func _deliver_drag() -> void:
 	drag_rope = null
 	drag_animal = null
 	drag_busy = false
-	message.emit("فككتَ الحبل ووضعتَ الغزال في الحظيرة ✓ — أطعمه كل يوم ليعطيك حليبًا")
+	message.emit("فككتَ الحبل ووضعتَ %s داخل سور المزرعة ✓ — أطعمه كل يوم واحلبه كل ساعة" % L.ANIMALS[k]["name"])
 	GameState.xp += 4
+	_stage_progress(k)
+
+# ---------------------------------------------------------------- the lake
+## Tells wild animals where the water is (only while it has water), lets 3 birds circle low over it and lowers the level as animals drink.
+func _pond_update() -> void:
+	if pond == null or pond.water == null:
+		return
+	var ok: bool = pond.ok()
+	var pbirds := 0
+	var drinkers := 0
+	for a in animals:
+		if not is_instance_valid(a) or a.dead or a.predator:
+			continue
+		if a.kind == "bird":
+			if a.pond_bird or pbirds < 3:
+				if not a.pond_bird:
+					a.pond_bird = true
+					a.circ_c = pond.center
+				pbirds += 1
+				a.pond_ok = ok
+			continue
+		a.pond_pos = pond.center if ok else Vector3.INF
+		a.pond_r = pond.RADIUS
+		if a.state == "drink" and a.idle_mode == "eat":
+			drinkers += 1
+	if drinkers > 0:
+		pond.drink(0.004 * float(drinkers))
+
+# ---------------------------------------------------------------- capture stages
+func _stage_name() -> String:
+	var st: int = GameState.hunt_stage
+	return L.STAGES[st]["name"] if st < L.STAGES.size() else "كل الحيوانات متاحة"
+
+func stage_text() -> String:
+	var st: int = GameState.hunt_stage
+	if st >= L.STAGES.size():
+		return "الاصطياد الحي: كل المراحل مكتملة"
+	return "مرحلة الاصطياد: %s %d/%d" % [L.STAGES[st]["name"], GameState.stage_n, int(L.STAGES[st]["goal"])]
+
+func _stage_progress(kind: String) -> void:
+	if not L.stage_counts(GameState.hunt_stage, kind):
+		return
+	GameState.stage_n += 1
+	var st: Dictionary = L.STAGES[GameState.hunt_stage]
+	if GameState.stage_n >= int(st["goal"]):
+		GameState.hunt_stage += 1
+		GameState.stage_n = 0
+		GameState.xp += 10
+		if GameState.hunt_stage < L.STAGES.size():
+			message.emit("أنهيتَ مرحلة %s ✓ المرحلة التالية: %s (%d)" % [st["name"], L.STAGES[GameState.hunt_stage]["name"], int(L.STAGES[GameState.hunt_stage]["goal"])])
+		else:
+			message.emit("أنهيتَ كل مراحل الاصطياد الحي ✓")
+	else:
+		message.emit("تقدّم المرحلة: %d/%d" % [GameState.stage_n, int(st["goal"])])
+
+## Keeps the wild population up (animals that were caught are replaced by new ones elsewhere).
+func _maintain() -> void:
+	var counts := {}
+	for a in animals:
+		if is_instance_valid(a) and not a.dead:
+			counts[a.kind] = int(counts.get(a.kind, 0)) + 1
+	for k in WILD:
+		if int(counts.get(k, 0)) < int(WILD[k]):
+			_spawn(k)
+			return
+
+# ---------------------------------------------------------------- predators (bear by day and night, wolves and foxes at night)
+func _fences() -> Array:
+	var out: Array = []
+	if barn == null:
+		return out
+	if GameState.farm_built and not (gate_open_cb.is_valid() and gate_open_cb.call()):
+		out.append({"c": barn.farm_center, "h": 5.7})
+	if GameState.barn_built:
+		out.append({"c": barn.barn_center, "h": 4.6})
+	return out
+
+## Is a penned animal of this kind safe from predators right now?
+func _protected(kind: String) -> bool:
+	if BL.is_poultry(kind):
+		return GameState.barn_built
+	return GameState.farm_built and not (gate_open_cb.is_valid() and gate_open_cb.call())
+
+func _pred_manage() -> void:
+	var night := GameState.is_night()
+	var cnt := {"bear": 0, "wolf": 0, "fox": 0}
+	for a in animals:
+		if is_instance_valid(a) and a.predator and not a.dead:
+			cnt[a.kind] = int(cnt[a.kind]) + 1
+			if (a.kind != "bear") and not night:
+				a.leave_t = 30.0                     # night hunters go back to the forest at dawn
+				if Vector2(a.global_position.x - player.global_position.x, a.global_position.z - player.global_position.z).length() > 45.0:
+					animals.erase(a)
+					a.queue_free()
+	_pred_t -= 0.5
+	if _pred_t > 0.0:
+		return
+	_pred_t = 20.0
+	var started := not GameState.pen.is_empty() or GameState.level() >= 3
+	if not started:
+		return
+	if int(cnt["bear"]) < 1:
+		_spawn_pred("bear")
+	if night and int(cnt["wolf"]) < 2:
+		_spawn_pred("wolf")
+	if night and int(cnt["fox"]) < 1:
+		_spawn_pred("fox")
+
+func _spawn_pred(kind: String) -> void:
+	var a := AnimalS.new()
+	a.setup(kind, _rng.randi())
+	var c: Vector3 = barn.farm_center if barn != null else Vector3.ZERO
+	var ang := _rng.randf() * TAU
+	var p := c + Vector3(cos(ang), 0, sin(ang)) * _rng.randf_range(34.0, 48.0)
+	if Vector2(p.x - player.global_position.x, p.z - player.global_position.z).length() < 28.0:
+		p = c - (p - c)
+	p.x = clampf(p.x, -66.0, 66.0)
+	p.z = clampf(p.z, -66.0, 66.0)
+	a.position = Vector3(p.x, world.height_at(p.x, p.z), p.z)
+	add_child(a)
+	animals.append(a)
+	message.emit("سُمع زئير %s قريبًا!" % L.ANIMALS[kind]["name"] if kind == "bear" else "اقترب %s من المزرعة في الظلام!" % L.ANIMALS[kind]["name"])
+
+func _pred_frame(d: float) -> void:
+	var fc := _fences()
+	var pp: Vector3 = player.global_position
+	for a in animals:
+		if not is_instance_valid(a) or not a.predator or a.dead:
+			continue
+		a.fences = fc
+		var info: Dictionary = L.ANIMALS[a.kind]
+		var gp: Vector3 = a.global_position
+		var dp := Vector2(gp.x - pp.x, gp.z - pp.z).length()
+		if a.leave_t > 0.0:
+			a.has_target = false
+			continue
+		var det := float(info["detect"]) * (0.5 if player.crouch else 1.0)
+		if det > 0.0 and dp < det:
+			a.target = pp
+			a.has_target = true
+			a.chasing = true
+			if dp < float(info["reach"]) and a.atk_t <= 0.0 and inv_t <= 0.0:
+				_attack_player(a)
+			continue
+		a.chasing = false
+		var best = null
+		var bd := 1e9
+		for pa in GameState.pen:
+			var k := str(pa.kind)
+			if a.kind == "fox" and not BL.is_poultry(k):
+				continue
+			var n = barn.nodes.get(int(pa.id)) if barn != null else null
+			if n == null or not is_instance_valid(n):
+				continue
+			var dd := Vector2(n.global_position.x - gp.x, n.global_position.z - gp.z).length()
+			if dd < bd:
+				bd = dd
+				best = {"pa": pa, "n": n}
+		if best == null:
+			a.has_target = false
+			continue
+		a.target = best["n"].global_position
+		a.has_target = true
+		if bd < float(info["reach"]) + 0.6 and not _protected(str(best["pa"].kind)):
+			_eat_pen_animal(a, best["pa"])
+
+func _attack_player(a) -> void:
+	a.atk_t = 3.0
+	inv_t = 2.5
+	GameState.lives -= 1
+	var away: Vector3 = player.global_position - a.global_position
+	away.y = 0.0
+	if away.length() > 0.1:
+		player.global_position += away.normalized() * 1.2
+	a.leave_t = 2.5
+	player_hurt.emit()
+	if GameState.lives <= 0:
+		message.emit("أسقطك %s! تعود إلى المنزل بأرواح جديدة" % L.ANIMALS[a.kind]["name"])
+		for o in animals:
+			if is_instance_valid(o) and o.predator:
+				o.leave_t = 15.0
+		player_down.emit()
+	else:
+		message.emit("هجم عليك %s! خسرتَ روحًا — المتبقي %d" % [L.ANIMALS[a.kind]["name"], GameState.lives])
+
+func _eat_pen_animal(pred, pa: Dictionary) -> void:
+	var nm: String = L.ANIMALS[str(pa.kind)]["name"]
+	var n = barn.nodes.get(int(pa.id))
+	if n != null and is_instance_valid(n):
+		n.queue_free()
+	barn.nodes.erase(int(pa.id))
+	GameState.pen.erase(pa)
+	pred.leave_t = 25.0
+	pred.has_target = false
+	message.emit("هجم %s على %s والتهمه! أغلق السور والبوابة لحمايتها" % [L.ANIMALS[pred.kind]["name"], nm])

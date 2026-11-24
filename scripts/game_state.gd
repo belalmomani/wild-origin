@@ -3,7 +3,7 @@ extends Node
 const SAVE_PATH := "user://save.json"
 const SETTINGS_PATH := "user://settings.json"
 
-var inv := {"wood": 0, "stone": 0, "seeds": 2, "apples": 0, "arrows": 15, "meat": 0, "hay": 0, "gseeds": 0, "milk": 0}
+var inv := {"wood": 0, "stone": 0, "seeds": 2, "apples": 0, "arrows": 15, "meat": 0, "hay": 0, "gseeds": 0, "milk": 0, "fish": 0}
 var clock_hours := 8.0        # total game hours (time_of_day = clock_hours mod 24)
 var crops: Array = []
 var next_crop_id := 1
@@ -27,13 +27,21 @@ var saved_unix := 0.0
 var weapons: Array = ["slingshot"]
 var weapon_idx := 0
 var livestock: Array = []      # animals being carried to the farm: {kind, eta(unix)}
-var animals := {"deer": 0, "ibex": 0, "chicken": 0}   # arrived at the farm
+var animals := {"deer": 0, "ibex": 0, "elk": 0, "chicken": 0}   # arrived at the farm
 var barn_unlocked := false     # first live animal caught -> barn quest opens
 var barn_built := false
 var builds_done := 0           # finished builds since this save was first seen (each = +1% difficulty)
 var diff_base := -1            # builds that were already finished when difficulty started; -1 = not set yet
 var cost_acc := 0.0            # fractional piece cost carried over between pieces
 var farm_built := false
+var lives := 5                 # player lives: a predator attack costs one
+var hunt_stage := 0            # capture stage (see HuntLogic.STAGES)
+var stage_n := 0               # animals delivered in the current stage
+var well := 0                  # 0 none, 1 dug (manual watering), 2 upgraded (waters by itself)
+var bucket := 0                # water charges in the bucket
+var pond := 0.0                # lake water level 0..1
+var channel := false           # the wooden channel well -> lake is built
+var harvests := 0              # crops harvested (rewards the well upgrade)
 var sens_idx := 1              # camera sensitivity: 0 low, 1 normal, 2 high
 var fire_fuel := 0.0           # game hours of fire left in the hearth
 var hearth_init := false       # the first fire has been lit (gift of 8 hours)
@@ -50,7 +58,7 @@ var move := Vector2.ZERO
 var cam_delta := Vector2.ZERO
 
 func reset() -> void:
-	inv = {"wood": 0, "stone": 0, "seeds": 2, "apples": 0, "arrows": 15, "meat": 0, "hay": 0, "gseeds": 0, "milk": 0}
+	inv = {"wood": 0, "stone": 0, "seeds": 2, "apples": 0, "arrows": 15, "meat": 0, "hay": 0, "gseeds": 0, "milk": 0, "fish": 0}
 	barn_unlocked = false
 	barn_built = false
 	fire_fuel = 0.0
@@ -61,13 +69,21 @@ func reset() -> void:
 	diff_base = -1
 	cost_acc = 0.0
 	farm_built = false
+	lives = 5
+	hunt_stage = 0
+	stage_n = 0
+	well = 0
+	bucket = 0
+	harvests = 0
+	pond = 0.0
+	channel = false
 	pen = []
 	techs = []
 	next_pen_id = 1
 	weapons = ["slingshot"]
 	weapon_idx = 0
 	livestock = []
-	animals = {"deer": 0, "ibex": 0, "chicken": 0}
+	animals = {"deer": 0, "ibex": 0, "elk": 0, "chicken": 0}
 	crops = []
 	next_crop_id = 1
 	clock_hours = 8.0
@@ -87,7 +103,7 @@ func cap_of(k: String) -> int:
 	match k:
 		"wood", "stone":
 			return 400 if has_tech("storage") else 150
-		"apples", "meat", "hay", "milk":
+		"apples", "meat", "hay", "milk", "fish":
 			return 100 if has_tech("storage") else 40
 	return 99999
 
@@ -128,7 +144,7 @@ func to_dict() -> Dictionary:
 	return {"v": 1, "inv": inv, "placed": placed.keys(), "removed": removed.keys(),
 		"pos": [player_pos.x, player_pos.y, player_pos.z], "t": time_of_day,
 		"hints": hints_left, "phase": phase, "xp": xp, "torch": torch_owned,
-		"clock": clock_hours, "weapons": weapons, "widx": weapon_idx, "livestock": livestock, "animals": animals, "pen": pen, "techs": techs, "npid": next_pen_id, "barn_u": barn_unlocked, "fuel": fire_fuel, "dbase": diff_base, "cacc": cost_acc, "hinit": hearth_init, "drag": drag_kind, "crops": crops, "ncid": next_crop_id, "saved": Time.get_unix_time_from_system()}
+		"clock": clock_hours, "weapons": weapons, "widx": weapon_idx, "livestock": livestock, "animals": animals, "pen": pen, "techs": techs, "npid": next_pen_id, "barn_u": barn_unlocked, "fuel": fire_fuel, "dbase": diff_base, "cacc": cost_acc, "hinit": hearth_init, "drag": drag_kind, "crops": crops, "ncid": next_crop_id, "lives": lives, "hstage": hunt_stage, "stn": stage_n, "well": well, "bucket": bucket, "harv": harvests, "pond": pond, "channel": channel, "saved": Time.get_unix_time_from_system()}
 
 func from_dict(d: Dictionary) -> void:
 	reset()
@@ -150,7 +166,7 @@ func from_dict(d: Dictionary) -> void:
 		if typeof(e) == TYPE_DICTIONARY:
 			livestock.append(e)
 	var an: Dictionary = d.get("animals", {})
-	animals = {"deer": int(an.get("deer", 0)), "ibex": int(an.get("ibex", 0)), "chicken": int(an.get("chicken", 0))}
+	animals = {"deer": int(an.get("deer", 0)), "ibex": int(an.get("ibex", 0)), "elk": int(an.get("elk", 0)), "chicken": int(an.get("chicken", 0))}
 	techs = []
 	for tid in d.get("techs", []):
 		techs.append(str(tid))
@@ -166,6 +182,14 @@ func from_dict(d: Dictionary) -> void:
 	hearth_init = bool(d.get("hinit", false))
 	drag_kind = str(d.get("drag", ""))
 	next_crop_id = int(d.get("ncid", 1))
+	lives = clampi(int(d.get("lives", 5)), 1, 5)
+	hunt_stage = int(d.get("hstage", 0))
+	stage_n = int(d.get("stn", 0))
+	well = int(d.get("well", 0))
+	bucket = int(d.get("bucket", 0))
+	harvests = int(d.get("harv", 0))
+	pond = clampf(float(d.get("pond", 0.0)), 0.0, 1.0)
+	channel = bool(d.get("channel", false))
 	clock_hours = float(d.get("clock", 8.0))
 	time_of_day = fposmod(clock_hours, 24.0)
 	saved_unix = float(d.get("saved", 0.0))

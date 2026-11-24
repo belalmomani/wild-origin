@@ -53,6 +53,8 @@ func available(i: int) -> bool:
 		return shell_done()
 	if id.begins_with("G_"):
 		return board_done("S0")
+	if id.begins_with("R_"):
+		return GameState.channel          # the rod and dock come after the wooden channel to the lake
 	return true
 
 func current_index() -> int:

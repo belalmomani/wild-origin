@@ -213,6 +213,79 @@ func _init() -> void:
 		for bn in ["fl_up", "fr_up", "hl_up", "hr_up", "neck", "head"]:
 			if not names.has(bn):
 				print("FAIL ", k, " missing bone ", bn); fails += 1
+	# phase 6: skinned elk from the Unity prefab (bone tree, per-vertex skin data, index bounds)
+	var ed: Dictionary = load("res://assets/animals/elk_data.gd").data()
+	var ecount: int = ed["v"].size() / 3
+	var enb: int = ed["names"].size()
+	if enb != 34 or ed["parent"].size() != enb or ed["rest"].size() != enb * 12:
+		print("FAIL elk bones ", enb); fails += 1
+	for ei in enb:
+		if int(ed["parent"][ei]) >= ei:
+			print("FAIL elk bone parent order ", ei); fails += 1
+			break
+	if ed["n"].size() != ecount * 3 or ed["uv"].size() != ecount * 2 or ed["bi"].size() != ecount * 4 or ed["bw"].size() != ecount * 4:
+		print("FAIL elk vertex arrays"); fails += 1
+	for ei in ed["bi"]:
+		if ei < 0 or ei >= enb:
+			print("FAIL elk bone index ", ei); fails += 1
+			break
+	for ei in ed["idx"]:
+		if ei < 0 or ei >= ecount:
+			print("FAIL elk index out of range"); fails += 1
+			break
+	if ed["idx"].size() < 3000 or ed["idx"].size() % 3 != 0:
+		print("FAIL elk triangles"); fails += 1
+	# phase 7: capture stages, predators, poultry, lives, well state
+	var SH = load("res://scripts/hunt_logic.gd")
+	if not SH.capturable(0, "elk") or SH.capturable(0, "deer") or not SH.capturable(1, "deer") or not SH.capturable(2, "turkey"):
+		print("FAIL capture stages"); fails += 1
+	if SH.capturable(0, "bear") or SH.capturable(9, "wolf") or SH.capturable(9, "bird") or not SH.capturable(9, "deer"):
+		print("FAIL predators / birds are never caught alive"); fails += 1
+	if not SH.is_predator("fox") or SH.is_predator("elk") or SH.LIVES != 5:
+		print("FAIL predator flags"); fails += 1
+	if int(SH.STAGES[0]["goal"]) != 5 or int(SH.STAGES[1]["goal"]) != 5 or int(SH.STAGES[2]["goal"]) != 10:
+		print("FAIL stage goals"); fails += 1
+	var BLx = load("res://scripts/barn_logic.gd")
+	if not BLx.is_poultry("turkey") or BLx.is_poultry("elk") or BLx.MILK_PER_DAY != 24.0:
+		print("FAIL poultry / milk rate"); fails += 1
+	var ma: Dictionary = BLx.new_animal(1, "elk", 0.0)
+	BLx.feed(ma, 0.0)
+	BLx.step(ma, 1.0 / 24.0 + 0.0001, 1.0 / 24.0, false)
+	if float(ma["milk"]) < 0.99 or float(ma["milk"]) > 1.1:
+		print("FAIL one milk per game hour ", ma["milk"]); fails += 1
+	var gs7 = load("res://scripts/game_state.gd").new()
+	gs7.lives = 3
+	gs7.hunt_stage = 2
+	gs7.stage_n = 4
+	gs7.well = 2
+	gs7.bucket = 5
+	gs7.pond = 0.6
+	gs7.channel = true
+	var gs8 = load("res://scripts/game_state.gd").new()
+	gs8.from_dict(gs7.to_dict())
+	if gs8.lives != 3 or gs8.hunt_stage != 2 or gs8.stage_n != 4 or gs8.well != 2 or gs8.bucket != 5 or absf(gs8.pond - 0.6) > 0.001 or not gs8.channel:
+		print("FAIL save of lives / stage / well"); fails += 1
+	# realistic speeds: the player (running) is slower than a fleeing deer / elk / ibex and the predators, faster than a wounded one
+	var run_p: float = load("res://scripts/player.gd").SPEED
+	for rk in ["deer", "ibex", "elk", "wolf", "bear", "fox"]:
+		if float(SH.ANIMALS[rk]["run"]) <= run_p:
+			print("FAIL ", rk, " must outrun the player"); fails += 1
+	for rk in ["deer", "ibex", "elk"]:
+		if float(SH.ANIMALS[rk]["run"]) * 0.4 >= run_p:
+			print("FAIL wounded ", rk, " must be catchable"); fails += 1
+	# fishing: the rod and dock are puzzle boards (crafted, not given)
+	var fb := {}
+	for bd in load("res://scripts/building_data.gd").make_boards():
+		fb[str(bd.id)] = bd.pieces.size()
+	if int(fb.get("R_rod", 0)) != 6 or int(fb.get("R_dock", 0)) != 6:
+		print("FAIL fishing boards ", fb.get("R_rod", 0), " ", fb.get("R_dock", 0)); fails += 1
+	if int(load("res://scripts/game_state.gd").new().inv.get("fish", -1)) != 0:
+		print("FAIL fish item"); fails += 1
+	gs7.free()
+	gs8.free()
+	var EH = load("res://scripts/hunt_logic.gd")
+	if not EH.ANIMALS.has("elk") or float(EH.ANIMALS["elk"]["hp"]) <= 100.0:
+		print("FAIL elk stats"); fails += 1
 	var HL = load("res://scripts/hunt_logic.gd")
 	if not HL.ANIMALS.has("ibex") or float(HL.ANIMALS["ibex"]["hp"]) <= 0.0:
 		print("FAIL ibex stats"); fails += 1
@@ -239,4 +312,41 @@ func _init() -> void:
 	BLg.step(mb, 0.9, 0.1, false)
 	if float(mb.milk) != 0.0:
 		print("FAIL hungry deer must not give milk ", mb); fails += 1
+	# phase 7.3: seasons and weather (rain is not daily; long gaps; summer dry, winter wet)
+	var WLg = load("res://scripts/weather_logic.gd")
+	var wet := [0, 0, 0, 0]
+	var cnt := [0, 0, 0, 0]
+	var consec := 0
+	for wd in 3200:
+		var sn: int = WLg.season(wd)
+		cnt[sn] += 1
+		if WLg.rains_on(wd):
+			wet[sn] += 1
+			if WLg.rains_on(wd - 1):
+				consec += 1
+			var ww: Vector3 = WLg.rain_window(wd)
+			if ww.y - ww.x < 3.0 or ww.z <= 0.0:
+				print("FAIL rain must last hours ", wd, ww); fails += 1
+		elif WLg.rain_window(wd) != Vector3.ZERO:
+			print("FAIL dry day has window ", wd); fails += 1
+	var wtot: int = wet[0] + wet[1] + wet[2] + wet[3]
+	if float(wet[1]) / cnt[1] > 0.12 or float(wet[3]) / cnt[3] < 0.30 or float(wtot) / 3200.0 > 0.35 or float(wtot) / 3200.0 < 0.12:
+		print("FAIL season rain shares ", wet, cnt); fails += 1
+	if consec * 3 > wtot:
+		print("FAIL too many consecutive rainy days ", consec, "/", wtot); fails += 1
+	if WLg.season(0) != 0 or WLg.season(8) != 1 or WLg.season(31) != 3 or WLg.season(32) != 0:
+		print("FAIL season boundaries"); fails += 1
+	var rd := -1
+	for wd2 in 40:
+		if WLg.rains_on(wd2):
+			rd = wd2
+			break
+	if rd >= 0:
+		var rw: Vector3 = WLg.rain_window(rd)
+		if WLg.rain_at(rd * 24.0 + (rw.x + rw.y) * 0.5) <= 0.0:
+			print("FAIL rain_at inside window ", rd, rw); fails += 1
+		if WLg.forecast_text(rd * 24.0 + (rw.x + rw.y) * 0.5) != "تمطر الآن":
+			print("FAIL forecast while raining"); fails += 1
+	if WLg.evap_mult(8) <= WLg.evap_mult(24) or WLg.growth(24) >= WLg.growth(0):
+		print("FAIL season multipliers"); fails += 1
 	quit(1 if fails > 0 else 0)

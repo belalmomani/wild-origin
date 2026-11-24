@@ -7,6 +7,7 @@ const DOOR_C := Vector3(0, 0, 2.0)
 const BED_C := Vector3(-1.35, 0, -0.85)
 const HEARTH_C := Vector3(1.3, 0, -1.45)
 const LAMP_POS := Vector3(0, 2.33, 0)
+const POND_C := Vector3(-22, 0, 13)  # the lake (flat ground: terrain is flat within 26 m of the house)
 const FARM_C := Vector3(-14, 0, 0)  # fenced farm, west of the house (gate on its east side, facing the house)
 ## Hinged doors / gates. board = puzzle board that builds it, c = centre, out = the side it swings to,
 ## block = radius where closing is refused (the leaf would sweep through you), reach = interact distance.
@@ -163,6 +164,7 @@ static func make_boards() -> Array:
 	out.append(roof_board(BARN, "BROOF", "سقف الحظيرة"))
 	out.append_array(interior_boards())
 	out.append_array(farm_boards())
+	out.append_array(fishing_boards())
 	return out
 
 ## Two-leaf gate built as one puzzle board. Each leaf hangs on its own hinge (local x = -half / +half) and swings outwards.
@@ -288,6 +290,24 @@ static func _window_board(id: String, title: String, side: float) -> Dictionary:
 		_b(Vector3(0.1, 0.06, 0.7), Vector3(cx, 1.44, 0.0)),
 	]
 	return box_board(id, title, bars)
+
+## Fishing (unlocked once the well-to-lake channel exists): a small dock into the lake, then the rod itself.
+static func fishing_boards() -> Array:
+	var dock: Array = []
+	for i in 4:
+		dock.append(_b(Vector3(0.55, 0.08, 1.1), POND_C + Vector3(4.5 - 0.6 * i, 0.17, 0.0)))
+	dock.append(_b(Vector3(0.14, 0.7, 0.14), POND_C + Vector3(2.5, 0.35, -0.5)))
+	dock.append(_b(Vector3(0.14, 0.7, 0.14), POND_C + Vector3(2.5, 0.35, 0.5)))
+	var rc := POND_C + Vector3(4.9, 0.0, 0.95)       # the rod stands in its holder at the dock's root
+	var rod: Array = [
+		_b(Vector3(0.1, 0.5, 0.1), rc + Vector3(0, 0.25, 0)),                                            # holder post
+		_b(Vector3(0.06, 1.7, 0.06), rc + Vector3(0, 1.35, 0), "wood", {"tint": Color(0.62, 0.45, 0.25)}),  # shaft
+		_b(Vector3(0.09, 0.32, 0.09), rc + Vector3(0, 0.72, 0), "wood", {"tint": Color(0.3, 0.2, 0.12)}),   # grip
+		_b(Vector3(0.025, 1.0, 0.025), rc + Vector3(-0.15, 1.65, 0), "wood", {"tint": Color(0.9, 0.88, 0.8)}),  # line (rope)
+		_b(Vector3(0.07, 0.07, 0.07), rc + Vector3(-0.15, 1.12, 0), "wood", {"tint": Color(0.9, 0.12, 0.1)}),  # float
+		_b(Vector3(0.05, 0.1, 0.05), rc + Vector3(-0.15, 1.0, 0), "stone", {"tint": Color(0.7, 0.72, 0.75)}),   # hook
+	]
+	return [box_board("R_rod", "السنّارة (خشب + حبل + خطّاف)", rod), box_board("R_dock", "رصيف الصيد", dock)]
 
 static func interior_boards() -> Array:
 	var out: Array = []

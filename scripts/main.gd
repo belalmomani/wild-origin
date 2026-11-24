@@ -11,6 +11,11 @@ const HuntS := preload("res://scripts/hunt.gd")
 const BarnS := preload("res://scripts/barn.gd")
 const SfxS := preload("res://scripts/sfx.gd")
 const HomeS := preload("res://scripts/home.gd")
+const WellS := preload("res://scripts/well.gd")
+const PondS := preload("res://scripts/pond.gd")
+const FishS := preload("res://scripts/fishing.gd")
+const WeatherS := preload("res://scripts/weather.gd")
+const WL := preload("res://scripts/weather_logic.gd")
 
 var world
 var player
@@ -20,6 +25,10 @@ var farm
 var hunt
 var barn
 var home
+var well
+var pond
+var fishing
+var weather
 var sleeping := false
 var sfx
 var _cluck_t := 4.0
@@ -64,8 +73,10 @@ func _smoke() -> void:
 		await get_tree().create_timer(0.4).timeout
 	player.crouch = true
 	var cp: Vector3 = player.global_position + Vector3(0, 0, -3)
+	GameState.well = 1
 	farm.plant(cp)
 	for day in 8:
+		GameState.bucket = 4
 		farm.water_near(cp)
 		GameState.clock_hours += 24.0
 		farm.tick(24.0)
@@ -116,6 +127,92 @@ func _smoke() -> void:
 		print("SMOKE FAIL: ibex kill/loot")
 		get_tree().quit(1)
 		return
+	var elk = hunt.first_of("elk")
+	if elk == null or elk.elk == null:
+		print("SMOKE FAIL: elk model missing")
+		get_tree().quit(1)
+		return
+	elk.tick(0.1, player.global_position + Vector3(0, 0, 100), false, world)
+	elk.tick(0.1, player.global_position + Vector3(0, 0, 100), false, world)
+	for i in 3:
+		hunt.apply_hit(elk, "head")
+	elk.global_position = player.global_position + Vector3(0, 0, -1)
+	meat0 = GameState.count("meat")
+	if not elk.dead or not hunt.interact_nearby() or GameState.count("meat") != meat0 + 9:
+		print("SMOKE FAIL: elk kill/loot")
+		get_tree().quit(1)
+		return
+	print("SMOKE elk OK")
+	for pk in ["wolf", "bear", "fox"]:
+		hunt._spawn_pred(pk)
+	var seen := 0
+	for pa in hunt.animals:
+		if is_instance_valid(pa) and pa.predator:
+			seen += 1
+			pa.tick(0.1, player.global_position, false, world)
+			if pa.gl == null or pa.gl.ap == null or not pa.gl.has_clip("cycle_walk") or not pa.gl.has_clip("idle_breathe"):
+				print("SMOKE FAIL: predator model ", pa.kind)
+				get_tree().quit(1)
+				return
+	var bird = hunt.first_of("bird")
+	if seen != 3 or bird == null or bird.wings.size() != 2:
+		print("SMOKE FAIL: predators / bird ", seen)
+		get_tree().quit(1)
+		return
+	bird.tick(0.1, player.global_position, false, world)
+	print("SMOKE predators OK")
+	GameState.channel = true
+	GameState.pond = 0.8
+	await get_tree().create_timer(0.3).timeout
+	hunt._pond_update()
+	var dr = hunt.first_of("deer")
+	if dr.pond_pos == Vector3.INF or pond.water == null:
+		print("SMOKE FAIL: lake")
+		get_tree().quit(1)
+		return
+	print("SMOKE lake OK")
+	var rod_ok := true
+	for rb in builder.boards:
+		if str(rb.id) == "R_rod":
+			if builder.available(builder.index_of("R_rod")) == false:
+				rod_ok = false
+			for rp in rb.pieces:
+				GameState.placed[rp.id] = true
+	var shore: Vector3 = load("res://scripts/building_data.gd").POND_C + Vector3(5.2, 0, 0)
+	var fish0 := GameState.count("fish")
+	if not rod_ok or not fishing.has_rod() or not fishing.interact(shore) or fishing.state != "wait":
+		print("SMOKE FAIL: fishing cast")
+		get_tree().quit(1)
+		return
+	fishing.state = "bite"
+	fishing.t = 1.0
+	fishing.interact(shore)
+	if GameState.count("fish") <= fish0:
+		print("SMOKE FAIL: fish catch")
+		get_tree().quit(1)
+		return
+	print("SMOKE fishing OK")
+	var clock0: float = GameState.clock_hours
+	var wd0 := 0
+	while not WL.rains_on(wd0):
+		wd0 += 1
+	var ww0: Vector3 = WL.rain_window(wd0)
+	GameState.clock_hours = wd0 * 24.0 + (ww0.x + ww0.y) * 0.5
+	var pl0: float = GameState.pond
+	GameState.pond = 0.3
+	pond.tick(1.0)
+	weather.strength = 1.0
+	weather.update(0.1, GameState.clock_hours)
+	if GameState.pond <= 0.3 or not weather.parts.emitting:
+		print("SMOKE FAIL: rain should fill the lake and emit")
+		get_tree().quit(1)
+		return
+	GameState.pond = pl0
+	weather.strength = 0.0
+	GameState.clock_hours = clock0
+	print("SMOKE weather OK")
+	GameState.hunt_stage = 3
+	GameState.farm_built = true
 	var dd = hunt.first_of("deer")
 	GameState.add("wood", 8)
 	hunt.apply_hit(dd, "legs")
@@ -172,6 +269,7 @@ func _smoke() -> void:
 			for pi in builder.boards[bi].pieces.size():
 				builder.place(bi, pi)
 	GameState.barn_built = builder.barn_done()
+	GameState.farm_built = true
 	GameState.pen.append(load("res://scripts/barn_logic.gd").new_animal(GameState.next_pen_id, "deer", GameState.clock_hours / 24.0))
 	GameState.next_pen_id += 1
 	barn.tick(0.1)
@@ -179,7 +277,7 @@ func _smoke() -> void:
 	barn.tick(0.1)
 	GameState.add("apples", 3)
 	var pen_a = GameState.pen[0]
-	if not GameState.barn_built or not barn.interact(barn.center) or float(pen_a.fed) < GameState.clock_hours / 24.0 - 0.01:
+	if not GameState.barn_built or not barn.interact(barn.nodes[int(pen_a.id)].global_position) or float(pen_a.fed) < GameState.clock_hours / 24.0 - 0.01:
 		print("SMOKE FAIL: barn feeding")
 		get_tree().quit(1)
 		return
@@ -297,6 +395,16 @@ func _update_sky() -> void:
 	env.ambient_light_energy = lerpf(0.15, 1.0, day)
 	env.fog_light_color = hor
 	env.fog_density = lerpf(0.015, 0.003, day)
+	var wet := weather.dim() if weather != null else 0.0
+	if wet > 0.0:                                  # overcast: grey, dim, hazy
+		var grey := Color(0.45, 0.48, 0.52) * lerpf(0.25, 1.0, day)
+		sky.sky_top_color = sky.sky_top_color.lerp(grey, wet * 0.8)
+		sky.sky_horizon_color = sky.sky_horizon_color.lerp(grey * 1.1, wet * 0.8)
+		sky.ground_horizon_color = sky.sky_horizon_color
+		sun.light_energy *= 1.0 - 0.6 * wet
+		env.ambient_light_energy *= 1.0 - 0.3 * wet
+		env.fog_light_color = sky.sky_horizon_color
+		env.fog_density += 0.006 * wet
 
 func _start(is_new: bool) -> void:
 	if is_new:
@@ -316,6 +424,27 @@ func _start(is_new: bool) -> void:
 	farm.world = world
 	add_child(farm)
 	farm.message.connect(func(t): ui.toast(t, 4.0))
+	pond = PondS.new()
+	pond.world = world
+	add_child(pond)
+	weather = WeatherS.new()
+	weather.target = player
+	add_child(weather)
+	fishing = FishS.new()
+	fishing.world = world
+	fishing.pond = pond
+	fishing.builder = builder
+	fishing.player = player
+	add_child(fishing)
+	fishing.message.connect(func(t): ui.toast(t, 3.5))
+	fishing.action.connect(func(a): player.play_action(a, 0.8))
+	well = WellS.new()
+	well.world = world
+	well.pond = pond
+	add_child(well)
+	well.message.connect(func(t): ui.toast(t, 4.0))
+	well.action.connect(func(a): player.play_action(a, 1.2))
+	farm.harvested.connect(well.on_harvest)
 	var forage := ForageS.new()
 	forage.world = world
 	add_child(forage)
@@ -325,6 +454,11 @@ func _start(is_new: bool) -> void:
 	add_child(hunt)
 	hunt.message.connect(func(t): ui.toast(t, 3.5))
 	hunt.aim_changed.connect(ui.set_aim_mode)
+	hunt.aim_color_changed.connect(ui.set_crosshair_color)
+	hunt.player_hurt.connect(func(): sfx.play("hit", -2.0))
+	hunt.player_down.connect(_on_player_down)
+	hunt.gate_open_cb = func(): return builder.is_open("farm")
+	hunt.pond = pond
 	hunt.scope_changed.connect(ui.set_scope_mode)
 	player.footstep.connect(func(): sfx.step(player.crouch))
 	hunt.sound.connect(func(n): sfx.play(n, -2.0))
@@ -333,6 +467,7 @@ func _start(is_new: bool) -> void:
 	add_child(barn)
 	barn.message.connect(func(t): ui.toast(t, 4.0))
 	hunt.barn = barn
+	barn.player = player
 	home = HomeS.new()
 	home.builder = builder
 	add_child(home)
@@ -357,6 +492,7 @@ func _offline(hours: float) -> void:
 		var st := minf(1.0, left)
 		GameState.clock_hours += st
 		farm.tick(st, true)
+		pond.tick(st)
 		barn.tick(st, true)
 		home.tick(st, true)
 		left -= st
@@ -594,8 +730,16 @@ func _torch() -> void:
 			return
 	player.torch.visible = not player.torch.visible
 
+func _on_player_down() -> void:
+	GameState.lives = HuntLogic.LIVES
+	_go_home()
+
 func _interact() -> void:
 	if hunt.try_deliver():
+		return
+	if well.interact(player.global_position):
+		return
+	if fishing.interact(player.global_position):
 		return
 	if home.interact(player.global_position):
 		player.play_action("gather", 0.8)
@@ -668,7 +812,9 @@ func _process(d: float) -> void:
 	var dh := d * 24.0 / GameState.day_seconds
 	GameState.clock_hours += dh
 	GameState.time_of_day = fposmod(GameState.clock_hours, 24.0)
+	weather.update(d, GameState.clock_hours)
 	farm.tick(dh)
+	pond.tick(dh)
 	barn.tick(dh)
 	home.tick(dh)
 	_update_sky()
@@ -714,8 +860,8 @@ func _hud() -> void:
 		q = "%s — متبقي %d قطعة — لديك %d %s. اجمع ثم اضغط «بناء»" % [b.name, builder.remaining(bi), g.count(cost), "حجارة" if cost == "stone" else "خشب"]
 	var hr := int(g.time_of_day)
 	var res := "خشب %d | حجر %d | بذور %d | تفاح %d | مستوى %d | الوقت %02d:%02d" % [g.count("wood"), g.count("stone"), g.count("seeds"), g.count("apples"), g.level(), hr, int((g.time_of_day - hr) * 60.0)]
-	if g.count("gseeds") + g.count("hay") + g.count("milk") > 0:
-		res += "\nبذور علف %d | علف %d | حليب %d" % [g.count("gseeds"), g.count("hay"), g.count("milk")]
+	if g.count("gseeds") + g.count("hay") + g.count("milk") + g.count("fish") > 0:
+		res += "\nبذور علف %d | علف %d | حليب %d | سمك %d" % [g.count("gseeds"), g.count("hay"), g.count("milk"), g.count("fish")]
 	var night := GameState.is_night()
 	for l in lamp_lights:
 		l.visible = night
@@ -729,11 +875,19 @@ func _hud() -> void:
 	if ct == "":
 		ct = barn.info_text(player.global_position)
 	if ct == "":
+		ct = well.info_text(player.global_position)
+	if ct == "":
+		ct = fishing.info_text(player.global_position)
+	if ct == "":
+		ct = pond.info_text(player.global_position)
+	if ct == "":
 		ct = home.info_text(player.global_position)
 	ui.set_crop(ct)
+	res += "\nالأرواح: " + "❤".repeat(GameState.lives) + "🖤".repeat(maxi(0, HuntLogic.LIVES - GameState.lives)) + " | " + hunt.stage_text()
 	var tt: String = hunt.transit_text()
 	ui.set_hunt(hunt.weapon_text() + ("\n" + tt if tt != "" else ""))
 	ui.set_speed_visible(tt != "")
+	res += "\n" + WL.hud_text(GameState.clock_hours)
 	ui.set_hud(res, q)
 
 ## Hint for the interact button: what pressing it would do right here.
@@ -742,7 +896,13 @@ func _prompt() -> String:
 		return ""
 	var pos: Vector3 = player.global_position
 	if hunt.near_barn() and not hunt.drag_busy:
-		return "تفاعل: اربط الغزال في الحظيرة"
+		return "تفاعل: فكّ الحيوان داخل المزرعة"
+	var wh: String = well.hint(pos)
+	if wh != "":
+		return wh
+	var fh: String = fishing.hint(pos)
+	if fh != "":
+		return fh
 	var h: String = home.hint(pos)
 	if h != "":
 		return h

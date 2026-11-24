@@ -6,8 +6,11 @@ const WARN := 0.75
 const GRACE := 1.0
 const DECAY_PER_DAY := 0.25
 const OFFLINE_FLOOR := 0.35
-const MILK_PER_DAY := 2.0      # milk a well-fed deer/ibex gives per game day (none while hungry)
+const MILK_PER_DAY := 24.0     # one milk per GAME HOUR for a well-fed animal (none while hungry)
 const MILK_CAP := 6.0
+
+static func is_poultry(kind: String) -> bool:
+	return kind == "chicken" or kind == "turkey"
 
 static func new_animal(id: int, kind: String, now: float) -> Dictionary:
 	return {"id": id, "kind": kind, "h": 1.0, "fed": now, "warn": 0, "dead": false, "milk": 0.0}
@@ -25,7 +28,7 @@ static func step(a: Dictionary, now: float, dt: float, offline: bool) -> String:
 		return ""
 	var hg := now - float(a.fed)
 	var h := float(a.h)
-	if str(a.kind) != "chicken" and hg < WARN and h >= 0.7:
+	if not is_poultry(str(a.kind)) and hg < WARN and h >= 0.7:
 		a["milk"] = minf(MILK_CAP, float(a.get("milk", 0.0)) + dt * MILK_PER_DAY)
 	if hg > GRACE:
 		var nh := h - dt * DECAY_PER_DAY

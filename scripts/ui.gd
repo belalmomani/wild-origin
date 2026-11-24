@@ -302,8 +302,12 @@ func set_sound_text(idx: int) -> void:
 func set_gentle_text(on: bool) -> void:
 	buttons["gentle"].text = "تخفيف المشاهد: " + ("مفعّل" if on else "معطّل")
 
+func set_crosshair_color(c: Color) -> void:
+	crosshair.add_theme_color_override("font_color", c)
+
 func set_aim_mode(on: bool) -> void:
 	aim_on = on
+	crosshair.add_theme_color_override("font_color", Color(1, 1, 1))
 	if not on:
 		scope_on = false
 	_special()

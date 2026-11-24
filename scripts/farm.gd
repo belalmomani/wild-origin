@@ -1,12 +1,16 @@
 extends Node3D
 ## Apple orchard: plant, water daily, watch growth stages, harvest fruit. State lives in GameState.crops.
 signal message(text: String)
+signal harvested
 const L := preload("res://scripts/farm_logic.gd")
 const G := preload("res://scripts/mesh_gen.gd")
 const M := preload("res://scripts/mats.gd")
 const D := preload("res://scripts/building_data.gd")
+const WL := preload("res://scripts/weather_logic.gd")
 const FARM_BOOST := 1.25   # trees inside the finished farm fence grow 25% faster
 const MAX_OFFLINE_HOURS := 48.0
+const PLOT_OFFS := [-2.6, 0.0, 2.6]   # 3x3 tilled beds inside the fenced farm: fodder is planted only on them
+var plots: Node3D
 var world
 var nodes := {}
 var tree_mesh: ArrayMesh
@@ -116,12 +120,22 @@ func refresh_all() -> void:
 		_refresh(c)
 
 func tick(dt_hours: float, offline: bool = false) -> void:
+	_ensure_plots()
+	if WL.rain_at(GameState.clock_hours) > 0.05:  # rain waters every living crop
+		for c in GameState.crops:
+			if not c.dead:
+				L.water(c, _now())
+	var season_growth := WL.growth(WL.day_of(GameState.clock_hours))
+	if GameState.well >= 2:                       # upgraded well: waters every living crop by itself
+		for c in GameState.crops:
+			if not c.dead:
+				L.water(c, _now())
 	var now := _now()
 	var dt := dt_hours / 24.0
 	for c in GameState.crops:
-		var boost := 1.0
+		var boost := season_growth
 		if in_farm(Vector3(c.x, 0, c.z)):
-			boost = FARM_BOOST
+			boost *= FARM_BOOST
 		var ev := L.step(c, now, dt, offline, boost)
 		if offline:
 			continue
@@ -158,11 +172,50 @@ func notify_after_offline() -> void:
 func in_farm(pos: Vector3) -> bool:
 	return GameState.farm_built and absf(pos.x - D.FARM_C.x) < 4.6 and absf(pos.z - D.FARM_C.z) < 4.6
 
+func plot_centers() -> Array:
+	var out: Array = []
+	for ox in PLOT_OFFS:
+		for oz in PLOT_OFFS:
+			out.append(Vector3(D.FARM_C.x + ox, 0.0, D.FARM_C.z + oz))
+	return out
+
+## The empty bed nearest to `pos` (within reach), or Vector3.INF when every bed is planted.
+func free_plot(pos: Vector3) -> Vector3:
+	var best := Vector3.INF
+	var bd := 3.4
+	for p in plot_centers():
+		var taken := false
+		for c in GameState.crops:
+			if Vector2(c.x - p.x, c.z - p.z).length() < 0.8:
+				taken = true
+				break
+		var d := Vector2(p.x - pos.x, p.z - pos.z).length()
+		if not taken and d < bd:
+			bd = d
+			best = p
+	return best
+
+func _ensure_plots() -> void:
+	if plots != null or not GameState.farm_built or world == null:
+		return
+	plots = Node3D.new()
+	add_child(plots)
+	var soil := M.flat(Color(0.28, 0.19, 0.12), 1.0)
+	for p in plot_centers():
+		var mi := MeshInstance3D.new()
+		var b := BoxMesh.new()
+		b.size = Vector3(1.9, 0.08, 1.9)
+		mi.mesh = b
+		mi.material_override = soil
+		mi.position = Vector3(p.x, world.height_at(p.x, p.z) + 0.03, p.z)
+		plots.add_child(mi)
+
 func _plant_fodder(pos: Vector3) -> bool:
-	for c in GameState.crops:
-		if Vector2(c.x - pos.x, c.z - pos.z).length() < 0.9:
-			message.emit("المكان مزدحم — ابتعد قليلًا")
-			return false
+	var spot := free_plot(pos)
+	if spot == Vector3.INF:
+		message.emit("لا توجد قطعة أرض فارغة قربك — اقترب من إحدى قطع التربة المحروثة داخل المزرعة")
+		return false
+	pos = spot
 	GameState.spend("gseeds", 1)
 	var c := L.new_crop(GameState.next_crop_id, pos.x, pos.z, _now(), "fodder")
 	GameState.next_crop_id += 1
@@ -206,13 +259,23 @@ func plant(pos: Vector3) -> bool:
 	return true
 
 func water_near(pos: Vector3) -> bool:
+	if GameState.well <= 0:
+		message.emit("لا يوجد بئر — احفر بئرًا قرب المزرعة (تفاعل عند علامة البئر)")
+		return false
+	if GameState.well >= 2:
+		message.emit("البئر مطوّر: المزروعات تُسقى وحدها")
+		return false
+	if GameState.bucket <= 0:
+		message.emit("الدلو فارغ — اذهب إلى البئر واملأه (تفاعل)")
+		return false
 	var c := _nearest(pos, 3.5)
 	if c.is_empty() or c.dead:
 		message.emit("لا توجد شجرة حية قريبة للسقي")
 		return false
+	GameState.bucket -= 1
 	L.water(c, _now())
 	_refresh(c)
-	message.emit("سقيتَ الشجرة ✓")
+	message.emit("سقيتَ النبتة ✓ (الدلو %d)" % GameState.bucket)
 	return true
 
 func interact(cid: int) -> void:
@@ -232,6 +295,7 @@ func interact(cid: int) -> void:
 		message.emit("أزلتَ الشجرة الميتة (+1 خشب). ازرع بذرة جديدة.")
 	elif c.fruit and L.is_fodder(c):
 		L.harvest(c, _now())
+		harvested.emit()
 		var gh := GameState.add("hay", 4)
 		var sd := randf() < 0.5
 		if sd:
@@ -241,6 +305,7 @@ func interact(cid: int) -> void:
 		message.emit(("+%d علف" % gh) + (" و+1 بذرة علف" if sd else "") if gh > 0 else "مخزن العلف ممتلئ!")
 	elif c.fruit:
 		L.harvest(c, _now())
+		harvested.emit()
 		GameState.add("apples", 4 if GameState.has_tech("compost") else 3)
 		var got_seed := randf() < 0.4
 		if got_seed:

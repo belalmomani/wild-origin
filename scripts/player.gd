@@ -1,7 +1,7 @@
 extends CharacterBody3D
 ## Third-person player with cinematic over-the-shoulder camera. Uses character.gd (procedural survivor),
 ## or a user-supplied rigged model at assets/hero/hero.glb if present.
-const SPEED := 6.0          # full-stick run speed; walking = partial stick
+const SPEED := 5.2          # full-stick run speed; walking = partial stick
 const CROUCH_SPEED := 2.0
 const JUMP := 6.0
 const CharacterS := preload("res://scripts/character.gd")
