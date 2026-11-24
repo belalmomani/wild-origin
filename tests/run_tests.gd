@@ -303,15 +303,15 @@ func _init() -> void:
 	if not fd.dead:
 		print("FAIL unwatered fodder should die ", fd); fails += 1
 	var BLg = load("res://scripts/barn_logic.gd")
-	var ma: Dictionary = BLg.new_animal(1, "deer", 0.0)
+	var mq: Dictionary = BLg.new_animal(1, "deer", 0.0)
 	for mi in 7:
-		BLg.step(ma, 0.1 * (mi + 1), 0.1, false)
-	if float(ma.milk) < 1.0:
-		print("FAIL fed deer should give milk ", ma); fails += 1
-	var mb: Dictionary = BLg.new_animal(2, "deer", 0.0)
-	BLg.step(mb, 0.9, 0.1, false)
-	if float(mb.milk) != 0.0:
-		print("FAIL hungry deer must not give milk ", mb); fails += 1
+		BLg.step(mq, 0.1 * (mi + 1), 0.1, false)
+	if float(mq.milk) < 1.0:
+		print("FAIL fed deer should give milk ", mq); fails += 1
+	var mr: Dictionary = BLg.new_animal(2, "deer", 0.0)
+	BLg.step(mr, 0.9, 0.1, false)
+	if float(mr.milk) != 0.0:
+		print("FAIL hungry deer must not give milk ", mr); fails += 1
 	# phase 7.3: seasons and weather (rain is not daily; long gaps; summer dry, winter wet)
 	var WLg = load("res://scripts/weather_logic.gd")
 	var wet := [0, 0, 0, 0]

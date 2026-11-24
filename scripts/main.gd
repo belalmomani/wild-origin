@@ -395,7 +395,7 @@ func _update_sky() -> void:
 	env.ambient_light_energy = lerpf(0.15, 1.0, day)
 	env.fog_light_color = hor
 	env.fog_density = lerpf(0.015, 0.003, day)
-	var wet := weather.dim() if weather != null else 0.0
+	var wet: float = weather.dim() if weather != null else 0.0
 	if wet > 0.0:                                  # overcast: grey, dim, hazy
 		var grey := Color(0.45, 0.48, 0.52) * lerpf(0.25, 1.0, day)
 		sky.sky_top_color = sky.sky_top_color.lerp(grey, wet * 0.8)
