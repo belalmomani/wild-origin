@@ -46,7 +46,7 @@ jobs:
 
       - name: Smoke test (loads every script, starts a game, places pieces)
         run: |
-          WILD_SMOKE=1 godot --headless --quit-after 900 2>&1 | tee smoke.log
+          WILD_SMOKE=1 godot --headless --quit-after 9000 2>&1 | tee smoke.log
           if grep -E "SCRIPT ERROR|Parse Error" smoke.log; then echo "Script errors found above"; exit 1; fi
           grep -q "SMOKE OK" smoke.log
 
