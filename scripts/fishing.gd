@@ -68,7 +68,7 @@ func interact(pos: Vector3) -> bool:
 func _cast(pos: Vector3) -> void:
 	var dir := Vector3(pos.x - D.POND_C.x, 0, pos.z - D.POND_C.z)
 	dir = dir.normalized() if dir.length() > 0.1 else Vector3.RIGHT
-	spot = D.POND_C + dir * (WATER_R - 1.3)
+	spot = D.POND_C + dir * (WATER_R - 3.0)
 	bobber = MeshInstance3D.new()
 	var sm := SphereMesh.new()
 	sm.radius = 0.09

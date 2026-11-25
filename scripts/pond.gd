@@ -18,6 +18,7 @@ var mud: MeshInstance3D
 var channel_node: Node3D
 var flow: MeshInstance3D
 var base_y := 0.0
+var fish: Array = []
 var center := CENTER
 
 func _ready() -> void:
@@ -27,53 +28,86 @@ func _ground(x: float, z: float) -> float:
 	return world.height_at(x, z) if world != null else 0.0
 
 func _build() -> void:
-	var lo := 1e9
-	var hi := -1e9
-	for i in 16:
-		var a := TAU * float(i) / 16.0
-		for r in [0.0, RADIUS * 0.6, RADIUS]:
-			var h := _ground(CENTER.x + cos(a) * r, CENTER.z + sin(a) * r)
-			lo = minf(lo, h)
-			hi = maxf(hi, h)
-	base_y = hi + 0.05
+	base_y = D.WATER_Y
 	center = Vector3(CENTER.x, base_y, CENTER.z)
-	mud = MeshInstance3D.new()
+	mud = MeshInstance3D.new()                    # flat dark lake bed at the bottom of the basin
 	var mc := CylinderMesh.new()
-	mc.top_radius = RADIUS + 0.9
-	mc.bottom_radius = RADIUS + 0.9
-	mc.height = base_y - lo + 0.5
-	mc.radial_segments = 24
+	mc.top_radius = RADIUS - 0.5
+	mc.bottom_radius = RADIUS - 0.5
+	mc.height = 0.05
+	mc.radial_segments = 32
 	mud.mesh = mc
-	mud.material_override = M.flat(Color(0.3, 0.22, 0.14), 1.0)
-	mud.position = Vector3(CENTER.x, lo - 0.25 + mc.height * 0.5 - 0.0, CENTER.z)
-	mud.position.y = base_y - 0.02 - mc.height * 0.5
+	mud.material_override = M.flat(Color(0.12, 0.17, 0.15), 1.0)
+	mud.position = Vector3(CENTER.x, -D.POND_DEPTH + 0.35, CENTER.z)
 	add_child(mud)
 	water = MeshInstance3D.new()
 	var wc := CylinderMesh.new()
 	wc.top_radius = RADIUS
 	wc.bottom_radius = RADIUS
 	wc.height = 0.06
-	wc.radial_segments = 24
+	wc.radial_segments = 32
 	water.mesh = wc
 	var wm := StandardMaterial3D.new()
-	wm.albedo_color = Color(0.12, 0.38, 0.52, 0.82)
+	wm.albedo_color = Color(0.06, 0.3, 0.42, 0.66)
 	wm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	wm.roughness = 0.08
 	wm.metallic = 0.25
 	water.material_override = wm
-	water.position = Vector3(CENTER.x, base_y + 0.02, CENTER.z)
+	water.position = Vector3(CENTER.x, base_y, CENTER.z)
 	add_child(water)
-	for i in 9:                                   # a few reeds and stones around the shore
-		var a := TAU * float(i) / 9.0 + 0.3
+	for i in 16:                                  # stones around the shore
+		var a := TAU * float(i) / 16.0 + 0.3
 		var rock := MeshInstance3D.new()
 		var sm := SphereMesh.new()
-		sm.radius = 0.28 + 0.1 * float(i % 3)
+		sm.radius = 0.28 + 0.12 * float(i % 3)
 		sm.height = sm.radius * 1.4
 		rock.mesh = sm
 		rock.material_override = M.flat(Color(0.5, 0.49, 0.46), 0.95)
-		rock.position = Vector3(CENTER.x + cos(a) * (RADIUS + 0.7), base_y + 0.05, CENTER.z + sin(a) * (RADIUS + 0.7))
+		var rx := CENTER.x + cos(a) * (RADIUS + 0.9 + 0.5 * float(i % 2))
+		var rz := CENTER.z + sin(a) * (RADIUS + 0.9 + 0.5 * float(i % 2))
+		rock.position = Vector3(rx, _ground(rx, rz) + 0.05, rz)
 		add_child(rock)
+	_make_fish()
 	_refresh()
+
+func _make_fish() -> void:
+	var skin := [Color(0.75, 0.78, 0.82), Color(0.85, 0.5, 0.2), Color(0.5, 0.62, 0.45)]
+	for i in 14:
+		var f := Node3D.new()
+		var body := MeshInstance3D.new()
+		var sm := SphereMesh.new()
+		sm.radius = 0.2
+		sm.height = 0.4
+		body.mesh = sm
+		body.scale = Vector3(0.55, 0.65, 1.7)
+		body.material_override = M.flat(skin[i % 3], 0.5)
+		f.add_child(body)
+		var tail := MeshInstance3D.new()
+		var tm := BoxMesh.new()
+		tm.size = Vector3(0.02, 0.2, 0.16)
+		tail.mesh = tm
+		tail.position = Vector3(0, 0, 0.36)
+		tail.material_override = body.material_override
+		f.add_child(tail)
+		add_child(f)
+		fish.append({"n": f, "a": randf() * TAU, "r": 0.2 + 0.4 * randf(), "v": (0.12 + 0.12 * randf()) * (1.0 if i % 2 == 0 else -1.0), "y": 0.5 + 1.0 * randf(), "ph": randf() * TAU})
+
+func _process(d: float) -> void:
+	var lvl := clampf(GameState.pond, 0.0, 1.0)
+	var show := lvl > 0.12 and water != null
+	var sr := RADIUS * (0.45 + 0.55 * lvl)
+	for f in fish:
+		var n: Node3D = f["n"]
+		n.visible = show
+		if not show:
+			continue
+		f["a"] = float(f["a"]) + float(f["v"]) * d
+		f["ph"] = float(f["ph"]) + d * 1.5
+		var a: float = f["a"]
+		var r: float = sr * float(f["r"]) * 1.2
+		n.position = Vector3(CENTER.x + cos(a) * r, base_y - float(f["y"]) + sin(float(f["ph"])) * 0.08, CENTER.z + sin(a) * r)
+		var tang := Vector3(-sin(a), 0, cos(a)) * signf(float(f["v"]))
+		n.rotation.y = atan2(-tang.x, -tang.z)
 
 func ok() -> bool:
 	return GameState.pond >= DRINK_MIN

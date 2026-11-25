@@ -5,6 +5,7 @@ const SCENES := {
 	"wolf": preload("res://assets/animals/wolf.glb"),
 	"bear": preload("res://assets/animals/bear.glb"),
 }
+const BEAR_TEX := preload("res://assets/animals/bear_albedo_fix.png")
 const KNOWN := ["cycle_walk", "cycle_run", "cycle_trot", "cycle_sneak", "death_neutral", "idle_breathe", "idle_specific_01"]
 const LOOPING := ["cycle_walk", "cycle_run", "cycle_trot", "cycle_sneak", "idle_breathe", "idle_specific_01"]
 var holder: Node3D
@@ -34,6 +35,8 @@ static func build(kind: String, parent: Node3D, scale_f: float, tint: Color = Co
 			r.clips[short] = n
 			var an: Animation = r.ap.get_animation(n)
 			an.loop_mode = Animation.LOOP_LINEAR if LOOPING.has(short) else Animation.LOOP_NONE
+	if kind == "bear":                      # the original claws / mouth are bright pink: shown red on the raised paws
+		_retex(inst, BEAR_TEX)
 	if tint != Color(1, 1, 1):
 		_tint(inst, tint)
 	r.play("idle_breathe")
@@ -47,6 +50,18 @@ static func _find_player(n: Node) -> AnimationPlayer:
 		if f != null:
 			return f
 	return null
+
+static func _retex(n: Node, tex: Texture2D) -> void:
+	if n is MeshInstance3D:
+		var mi := n as MeshInstance3D
+		for i in mi.get_surface_override_material_count():
+			var m := mi.get_active_material(i)
+			if m is StandardMaterial3D:
+				var d := (m as StandardMaterial3D).duplicate() as StandardMaterial3D
+				d.albedo_texture = tex
+				mi.set_surface_override_material(i, d)
+	for ch in n.get_children():
+		_retex(ch, tex)
 
 static func _tint(n: Node, c: Color) -> void:
 	if n is MeshInstance3D:

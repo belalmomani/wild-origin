@@ -4,6 +4,7 @@ const HALF := 100.0
 const CELL := 2.0
 const M := preload("res://scripts/mats.gd")
 const G := preload("res://scripts/mesh_gen.gd")
+const D := preload("res://scripts/building_data.gd")
 var noise := FastNoiseLite.new()
 var patch := FastNoiseLite.new()
 var tree_meshes: Array = []
@@ -15,7 +16,12 @@ var _rock_variants: Array = []
 func height_at(x: float, z: float) -> float:
 	var f := smoothstep(26.0, 50.0, Vector2(x, z).length())  # flat build area near origin
 	var edge := smoothstep(70.0, 98.0, maxf(absf(x), absf(z)))  # mountain ring = world boundary
-	return noise.get_noise_2d(x, z) * 15.0 * f + edge * (24.0 + noise.get_noise_2d(x * 2.0, z * 2.0) * 7.0)
+	var h := noise.get_noise_2d(x, z) * 15.0 * f + edge * (24.0 + noise.get_noise_2d(x * 2.0, z * 2.0) * 7.0)
+	var ld := Vector2(x - D.POND_C.x, z - D.POND_C.z).length()
+	if ld < D.POND_R + 10.0:                   # lake: flat shore around it, a deep basin carved into the ground
+		h = lerpf(h, 0.0, 1.0 - smoothstep(D.POND_R + 1.0, D.POND_R + 10.0, ld))
+		h -= D.POND_DEPTH * (1.0 - smoothstep(D.POND_R * 0.35, D.POND_R + 1.0, ld))
+	return h
 
 func build(removed: Dictionary) -> void:
 	noise.seed = 1337
@@ -55,6 +61,7 @@ func _weights(x: float, z: float, h: float) -> Color:
 	var n2 := patch.get_noise_2d(x + 300.0, z - 200.0) * 0.5 + 0.5
 	var rock := clampf(smoothstep(0.55, 1.1, slope) + smoothstep(9.0, 14.0, h), 0.0, 1.0)
 	var dirt := smoothstep(0.62, 0.78, n1) * 0.9
+	dirt = maxf(dirt, 1.0 - smoothstep(D.POND_R * 0.7, D.POND_R + 1.5, Vector2(x - D.POND_C.x, z - D.POND_C.z).length()))
 	var site := 1.0 - smoothstep(7.0, 12.0, Vector2(x, z).length())   # packed earth around the build site
 	dirt = maxf(dirt, site)
 	var gravel := smoothstep(0.66, 0.8, n2) * 0.8
@@ -134,9 +141,7 @@ func _rock(pos: Vector3, id: int, sc: float, yaw: float) -> void:
 
 ## True if the ground point (x, z) is on the lake or its shore margin (no trees / rocks / grass there).
 func _in_lake(p: Vector2, margin: float) -> bool:
-	var c: Vector3 = load("res://scripts/building_data.gd").POND_C
-	var r: float = load("res://scripts/building_data.gd").POND_R
-	return Vector2(p.x - c.x, p.y - c.z).length() < r + margin
+	return Vector2(p.x - D.POND_C.x, p.y - D.POND_C.z).length() < D.POND_R + margin
 
 func _grass(rng: RandomNumberGenerator) -> void:
 	var mm := MultiMesh.new()

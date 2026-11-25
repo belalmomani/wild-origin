@@ -583,6 +583,10 @@ func tick(d: float, ppos: Vector3, crouch: bool, world) -> void:
 
 func die(gentle: bool) -> void:
 	dead = true
+	rear_t = 0.0
+	rear_state = 0
+	if gl != null and gl.holder != null:
+		gl.holder.rotation.x = 0.0                 # never die frozen on the hind legs
 	for c in get_children():
 		if c is Area3D:
 			(c as Area3D).collision_layer = 0
