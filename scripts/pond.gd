@@ -47,11 +47,9 @@ func _build() -> void:
 	wc.height = 0.06
 	wc.radial_segments = 32
 	water.mesh = wc
-	var wm := StandardMaterial3D.new()
-	wm.albedo_color = Color(0.06, 0.3, 0.42, 0.66)
-	wm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	wm.roughness = 0.08
-	wm.metallic = 0.25
+	var wm := ShaderMaterial.new()
+	wm.shader = load("res://assets/shaders/water.gdshader")
+	wm.set_shader_parameter("radius", RADIUS)
 	water.material_override = wm
 	water.position = Vector3(CENTER.x, base_y, CENTER.z)
 	add_child(water)

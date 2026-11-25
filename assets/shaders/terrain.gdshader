@@ -10,10 +10,12 @@ uniform float tile = 0.28;
 
 varying vec4 w;
 varying vec2 wuv;
+varying float wy;
 
 void vertex() {
 	w = COLOR;
 	wuv = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xz;
+	wy = (MODEL_MATRIX * vec4(VERTEX, 1.0)).y;
 }
 
 void fragment() {
@@ -30,6 +32,9 @@ void fragment() {
 	float macro2 = texture(grass_a, wuv * 0.0075).r;  // very large patches: lush vs dry areas
 	col *= (0.78 + 0.5 * macro) * (0.9 + 0.22 * macro2);
 	col = mix(col, col * vec3(1.06, 1.0, 0.86), clamp(macro2 * 1.4 - 0.5, 0.0, 1.0) * k.r);
+	col = mix(col, col * vec3(0.82, 1.18, 0.7), k.r * 0.8);          // lush saturated green meadows
+	float snow = smoothstep(14.0, 20.0, wy + (macro - 0.5) * 6.0);   // snow caps on the mountain ring
+	col = mix(col, vec3(0.93, 0.96, 1.0), snow);
 	ALBEDO = col;
 	ROUGHNESS = 0.95;
 	vec3 n = mix(texture(grass_n, uv).rgb, texture(rock_n, uv * 0.6).rgb, k.a);

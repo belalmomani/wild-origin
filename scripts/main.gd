@@ -358,15 +358,16 @@ func _setup_env() -> void:
 	env.sky = s
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
 	env.fog_enabled = true
-	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
+	env.tonemap_mode = Environment.TONE_MAPPER_ACES
 	env.adjustment_enabled = true
-	env.adjustment_contrast = 1.1
-	env.adjustment_saturation = 1.15
+	env.adjustment_contrast = 1.08
+	env.adjustment_saturation = 1.32     # vivid, storybook colours
+	env.adjustment_brightness = 1.03
 	env.glow_enabled = true          # soft bloom on the lamp, fire and sun (ignored on renderers without glow)
 	env.glow_intensity = 0.7
 	env.glow_bloom = 0.04
 	env.glow_hdr_threshold = 0.85
-	env.fog_sun_scatter = 0.12       # warm haze toward the sun
+	env.fog_sun_scatter = 0.18       # warm haze toward the sun
 	env.tonemap_white = 5.0
 	var we := WorldEnvironment.new()
 	we.environment = env
@@ -382,19 +383,19 @@ func _update_sky() -> void:
 		ang = PI + fposmod(t - GameState.NIGHT_START, 24.0) / (24.0 - GameState.NIGHT_START + GameState.NIGHT_END) * PI
 	var elev := sin(ang)
 	sun.rotation = Vector3(-ang, deg_to_rad(40.0), 0.0)
-	sun.light_energy = clampf(elev * 1.3, 0.0, 1.2)
+	sun.light_energy = clampf(elev * 1.6, 0.0, 1.5)
 	sun.visible = elev > -0.05
 	var day := smoothstep(-0.15, 0.35, elev)
 	var dusk := clampf(1.0 - absf(elev - 0.05) * 3.5, 0.0, 1.0)
-	sky.sky_top_color = Color(0.02, 0.03, 0.08).lerp(Color(0.25, 0.5, 0.9), day)
-	var hor := Color(0.04, 0.05, 0.1).lerp(Color(0.65, 0.78, 0.9), day).lerp(Color(0.9, 0.45, 0.25), dusk * 0.7)
+	sky.sky_top_color = Color(0.02, 0.03, 0.08).lerp(Color(0.14, 0.42, 0.96), day)
+	var hor := Color(0.04, 0.05, 0.1).lerp(Color(0.62, 0.83, 1.0), day).lerp(Color(0.9, 0.45, 0.25), dusk * 0.7)
 	sky.sky_horizon_color = hor
 	sky.ground_horizon_color = hor
 	sky.ground_bottom_color = sky.sky_top_color * 0.5
-	sun.light_color = Color(1, 0.95, 0.85).lerp(Color(1, 0.55, 0.3), dusk)
-	env.ambient_light_energy = lerpf(0.15, 1.0, day)
+	sun.light_color = Color(1.0, 0.96, 0.84).lerp(Color(1, 0.55, 0.3), dusk)
+	env.ambient_light_energy = lerpf(0.15, 1.3, day)
 	env.fog_light_color = hor
-	env.fog_density = lerpf(0.015, 0.003, day)
+	env.fog_density = lerpf(0.015, 0.0022, day)
 	var wet: float = weather.dim() if weather != null else 0.0
 	if wet > 0.0:                                  # overcast: grey, dim, hazy
 		var grey := Color(0.45, 0.48, 0.52) * lerpf(0.25, 1.0, day)

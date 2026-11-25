@@ -42,6 +42,12 @@ var _tween: Tween
 var fade_rect: ColorRect
 var prompt_label: Label
 var vignette: TextureRect
+var res_bg: Panel
+var quest_bg: Panel
+var _res_lines := 1
+
+const GOLD := Color(0.96, 0.78, 0.28)
+const CIRCLE_BTNS := ["interact", "fire", "jump", "crouch", "aim", "weapon", "scope", "torch", "plant", "water", "build"]
 
 func _ready() -> void:
 	layer = 10
@@ -58,10 +64,13 @@ func _ready() -> void:
 	tech.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	tech.visible = false
 	add_child(tech)
+	res_bg = _card(Color(0.05, 0.08, 0.07, 0.62))
+	quest_bg = _card(Color(0.05, 0.08, 0.07, 0.62))
 	title_label = _label(64)
 	title_label.text = "WILD ORIGIN\nبداية العالم"
-	res_label = _label(26)
-	quest_label = _label(26)
+	res_label = _label(24)
+	quest_label = _label(24)
+	quest_label.add_theme_color_override("font_color", Color(1.0, 0.92, 0.6))
 	toast_label = _label(30)
 	puzzle_info = _label(28)
 	crop_label = _label(24)
@@ -112,8 +121,8 @@ func _ready() -> void:
 	fade_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	fade_rect.visible = false
 	add_child(fade_rect)
-	stick_base = _circle(180, Color(1, 1, 1, 0.18))
-	stick_knob = _circle(80, Color(1, 1, 1, 0.45))
+	stick_base = _circle(190, Color(1, 1, 1, 0.14), Color(1, 1, 1, 0.55), 4)
+	stick_knob = _circle(84, Color(1, 1, 1, 0.5), Color(1, 1, 1, 0.9), 3)
 	for n in [["new", "لعبة جديدة", "menu"], ["continue", "متابعة اللعبة", "menu"], ["quality", "الجودة", "menu"], ["sound", "الصوت", "menu"], ["day", "مدة اليوم", "menu"], ["gentle", "تخفيف المشاهد", "menu"], ["sens", "الحساسية", "menu"],
 			["jump", "قفز", "hud"], ["interact", "تفاعل", "hud"], ["build", "بناء", "hud"], ["torch", "مشعل", "hud"], ["crouch", "انحناء", "hud"], ["plant", "زرع", "hud"], ["water", "سقي", "hud"], ["tech", "تقنيات", "hud"], ["tresearch", "تطوير", "tech"], ["tclose", "إغلاق", "tech"], ["tup", "▲", "tech"], ["tdown", "▼", "tech"], ["aim", "تصويب", "hud"], ["weapon", "سلاح", "hud"], ["speed", "تسريع", "special"], ["scope", "عدسة", "special"], ["fire", "إطلاق", "special"], ["save", "حفظ", "hud"], ["home", "🏠 المنزل", "hud"],
 			["hint", "تلميح", "puzzle"], ["pnext", "لوحة أخرى ▸", "puzzle"], ["pclose", "إغلاق", "puzzle"], ["pleft", "◀", "puzzle"], ["pright", "▶", "puzzle"]]:
@@ -134,11 +143,62 @@ func _label(sz: int) -> Label:
 	add_child(l)
 	return l
 
-func _circle(sz: float, c: Color) -> Panel:
+## Rounded translucent card with a thin golden edge (HUD backgrounds).
+func _card(c: Color) -> Panel:
+	var p := Panel.new()
+	p.add_theme_stylebox_override("panel", _sbox(c, Color(GOLD.r, GOLD.g, GOLD.b, 0.75), 22, 2))
+	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(p)
+	return p
+
+func _sbox(bg: Color, border: Color, radius: int, bw: int) -> StyleBoxFlat:
+	var s := StyleBoxFlat.new()
+	s.bg_color = bg
+	s.border_color = border
+	s.set_border_width_all(bw)
+	s.set_corner_radius_all(radius)
+	s.shadow_color = Color(0, 0, 0, 0.35)
+	s.shadow_size = 6
+	return s
+
+func _style_button(b: Button, n: String, group: String) -> void:
+	var bg := Color(0.07, 0.1, 0.08, 0.6)
+	var edge := GOLD
+	var radius := 30
+	var bw := 3
+	if group == "menu" or group == "puzzle" or group == "tech":
+		bg = Color(0.1, 0.28, 0.16, 0.92)
+		radius = 22
+	if n == "interact":
+		bg = Color(0.86, 0.6, 0.1, 0.9)
+		edge = Color(1, 0.95, 0.75)
+		bw = 5
+	elif n == "fire":
+		bg = Color(0.8, 0.18, 0.12, 0.9)
+		edge = Color(1, 0.85, 0.75)
+		bw = 5
+	elif n == "build":
+		bg = Color(0.18, 0.4, 0.22, 0.88)
+	elif n == "weapon" or n == "aim":
+		bw = 4
+	if CIRCLE_BTNS.has(n) and group == "hud":
+		radius = 48
+	b.add_theme_stylebox_override("normal", _sbox(bg, edge, radius, bw))
+	b.add_theme_stylebox_override("hover", _sbox(bg.lightened(0.1), edge, radius, bw))
+	b.add_theme_stylebox_override("pressed", _sbox(bg.lightened(0.25), Color(1, 1, 1), radius, bw))
+	b.add_theme_stylebox_override("disabled", _sbox(Color(0.2, 0.2, 0.2, 0.5), Color(0.5, 0.5, 0.5, 0.6), radius, 2))
+	b.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	b.add_theme_color_override("font_color", Color(1, 1, 1))
+	b.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+	b.add_theme_constant_override("outline_size", 5)
+
+func _circle(sz: float, c: Color, edge: Color = Color(0, 0, 0, 0), bw: int = 0) -> Panel:
 	var p := Panel.new()
 	p.size = Vector2(sz, sz)
 	var s := StyleBoxFlat.new()
 	s.bg_color = c
+	s.border_color = edge
+	s.set_border_width_all(bw)
 	s.set_corner_radius_all(int(sz / 2))
 	p.add_theme_stylebox_override("panel", s)
 	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -152,6 +212,7 @@ func _btn(n: String, text: String, group: String) -> void:
 	b.focus_mode = Control.FOCUS_NONE
 	b.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	b.add_theme_font_size_override("font_size", 28)
+	_style_button(b, n, group)
 	add_child(b)
 	buttons[n] = b
 	match group:
@@ -231,6 +292,28 @@ func _layout() -> void:
 	_put("pleft", Vector2(vp.x * 0.04, vp.y * 0.7), Vector2(56, 110))
 	_put("pright", Vector2(vp.x * 0.96 - 56.0, vp.y * 0.7), Vector2(56, 110))
 	puzzle.layout(vp)
+	_place_hud()
+
+## Stacks the HUD cards: resources on top, the quest card under it, then crop / hunt lines.
+func _place_hud() -> void:
+	var vp := get_viewport().get_visible_rect().size
+	var w := minf(vp.x * 0.62, 1180.0)
+	var x := (vp.x - w) * 0.5
+	var rh := 18.0 + 33.0 * float(_res_lines)
+	res_bg.position = Vector2(x, 6)
+	res_bg.size = Vector2(w, rh)
+	res_label.position = Vector2(0, 14)
+	res_label.size = Vector2(vp.x, rh)
+	var qy := 6.0 + rh + 6.0
+	quest_bg.position = Vector2(x, qy)
+	quest_bg.size = Vector2(w, 54)
+	quest_label.position = Vector2(0, qy + 10.0)
+	quest_label.size = Vector2(vp.x, 40)
+	crop_label.position = Vector2(0, qy + 62.0)
+	hunt_label.position = Vector2(0, qy + 132.0)
+	var show := not in_menu and not in_puzzle and not in_tech
+	res_bg.visible = show
+	quest_bg.visible = show and quest_label.text != ""
 
 func show_menu(has_save: bool) -> void:
 	in_menu = true
@@ -277,6 +360,7 @@ func _set_mode() -> void:
 	puzzle_info.visible = in_puzzle
 	for l in [res_label, quest_label, crop_label, hunt_label]:
 		l.visible = not in_menu and not in_puzzle and not in_tech
+	_place_hud()
 	vignette.visible = not in_menu and not in_puzzle and not in_tech and GameState.quality >= 1
 	if in_menu or in_puzzle or in_tech:
 		prompt_label.visible = false
@@ -342,6 +426,10 @@ func set_crop(text: String) -> void:
 func set_hud(res: String, quest: String) -> void:
 	res_label.text = res
 	quest_label.text = quest
+	var lines := res.count("\n") + 1
+	if lines != _res_lines:
+		_res_lines = lines
+	_place_hud()
 
 func cinematic_bars(secs: float) -> void:
 	for bar in [bar_top, bar_bot]:

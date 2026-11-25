@@ -52,6 +52,7 @@ func build(removed: Dictionary) -> void:
 			continue
 		_rock(Vector3(p.x, height_at(p.x, p.y), p.y), 1000 + i, sc, rng.randf() * TAU)
 	_grass(rng)
+	_lake_shore(removed)
 
 func _weights(x: float, z: float, h: float) -> Color:
 	var sx := (height_at(x + 1.0, z) - height_at(x - 1.0, z)) * 0.5
@@ -142,6 +143,88 @@ func _rock(pos: Vector3, id: int, sc: float, yaw: float) -> void:
 ## True if the ground point (x, z) is on the lake or its shore margin (no trees / rocks / grass there).
 func _in_lake(p: Vector2, margin: float) -> bool:
 	return Vector2(p.x - D.POND_C.x, p.y - D.POND_C.z).length() < D.POND_R + margin
+
+## Pines and boulders framing the lake, reeds and wild flowers along its shore (the side facing the house stays open).
+func _lake_shore(removed: Dictionary) -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 2024
+	var c := Vector2(D.POND_C.x, D.POND_C.z)
+	var home_a := atan2(-c.y, -c.x)                      # direction from the lake to the house
+	var pines := [0, 1, 2, 3, 4, 5, 6, 0, 1, 2, 3, 4, 5, 7, 9]   # id % 20: mostly pines, a few broadleaf
+	var n := 0
+	for k in 60:
+		var a := rng.randf() * TAU
+		var r := D.POND_R + rng.randf_range(4.5, 17.0)
+		var id: int = 2000 + k * 20 + int(pines[k % pines.size()])
+		if absf(angle_difference(a, home_a)) < 0.8 or removed.has(id):
+			continue
+		var x := c.x + cos(a) * r
+		var z := c.y + sin(a) * r
+		if Vector2(x, z).length() < 22.0 or absf(x) > 66.0 or absf(z) > 66.0:
+			continue
+		_tree(Vector3(x, height_at(x, z), z), id, rng.randf_range(0.9, 1.5), rng.randf() * TAU)
+		n += 1
+	for k in 9:                                           # boulders on the shore
+		var a := rng.randf() * TAU
+		var r := D.POND_R + rng.randf_range(1.4, 6.0)
+		if absf(angle_difference(a, home_a)) < 0.7 or removed.has(3000 + k):
+			continue
+		var x := c.x + cos(a) * r
+		var z := c.y + sin(a) * r
+		_rock(Vector3(x, height_at(x, z), z), 3000 + k, rng.randf_range(0.9, 1.7), rng.randf() * TAU)
+	var tuft := MultiMesh.new()                           # reeds / tall grass at the water's edge
+	tuft.transform_format = MultiMesh.TRANSFORM_3D
+	tuft.mesh = G.tuft()
+	var lup := MultiMesh.new()                            # purple lupines
+	lup.transform_format = MultiMesh.TRANSFORM_3D
+	var cone := CylinderMesh.new()
+	cone.top_radius = 0.0
+	cone.bottom_radius = 0.07
+	cone.height = 0.5
+	cone.radial_segments = 6
+	lup.mesh = cone
+	var dai := MultiMesh.new()                            # white daisies
+	dai.transform_format = MultiMesh.TRANSFORM_3D
+	var ds := SphereMesh.new()
+	ds.radius = 0.09
+	ds.height = 0.07
+	ds.radial_segments = 6
+	ds.rings = 3
+	dai.mesh = ds
+	var tf: Array = []
+	var lf: Array = []
+	var df: Array = []
+	for i in 420:
+		var a := rng.randf() * TAU
+		if absf(angle_difference(a, home_a)) < 0.35:
+			continue
+		var r := D.POND_R + rng.randf_range(-0.8, 9.0)
+		var x := c.x + cos(a) * r
+		var z := c.y + sin(a) * r
+		var y := height_at(x, z)
+		if y < D.WATER_Y + 0.12:
+			continue
+		var bs := Basis(Vector3.UP, rng.randf() * TAU)
+		if r < D.POND_R + 1.6:
+			tf.append(Transform3D(bs.scaled(Vector3.ONE * rng.randf_range(1.2, 2.0)), Vector3(x, y, z)))
+		elif i % 3 == 0:
+			lf.append(Transform3D(bs, Vector3(x, y + 0.25, z)))
+		elif i % 3 == 1:
+			df.append(Transform3D(bs, Vector3(x, y + 0.08, z)))
+		else:
+			tf.append(Transform3D(bs.scaled(Vector3.ONE * rng.randf_range(0.8, 1.3)), Vector3(x, y, z)))
+	for pair in [[tuft, tf, null], [lup, lf, Color(0.55, 0.3, 0.85)], [dai, df, Color(0.97, 0.97, 0.92)]]:
+		var mm: MultiMesh = pair[0]
+		var arr: Array = pair[1]
+		mm.instance_count = arr.size()
+		for i in arr.size():
+			mm.set_instance_transform(i, arr[i])
+		var mi := MultiMeshInstance3D.new()
+		mi.multimesh = mm
+		if pair[2] != null:
+			mi.material_override = M.flat(pair[2], 0.9)
+		mi.visibility_range_end = 70.0
+		add_child(mi)
 
 func _grass(rng: RandomNumberGenerator) -> void:
 	var mm := MultiMesh.new()
