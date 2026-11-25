@@ -7,7 +7,8 @@ const DOOR_C := Vector3(0, 0, 2.0)
 const BED_C := Vector3(-1.35, 0, -0.85)
 const HEARTH_C := Vector3(1.3, 0, -1.45)
 const LAMP_POS := Vector3(0, 2.33, 0)
-const POND_C := Vector3(-22, 0, 13)  # the lake (flat ground: terrain is flat within 26 m of the house)
+const POND_C := Vector3(-21, 0, 15)  # the lake (flat ground: terrain is flat within 26 m of the house)
+const POND_R := 7.5                  # lake radius (a real pond now, not a puddle)
 const FARM_C := Vector3(-14, 0, 0)  # fenced farm, west of the house (gate on its east side, facing the house)
 ## Hinged doors / gates. board = puzzle board that builds it, c = centre, out = the side it swings to,
 ## block = radius where closing is refused (the leaf would sweep through you), reach = interact distance.
@@ -295,10 +296,10 @@ static func _window_board(id: String, title: String, side: float) -> Dictionary:
 static func fishing_boards() -> Array:
 	var dock: Array = []
 	for i in 4:
-		dock.append(_b(Vector3(0.55, 0.08, 1.1), POND_C + Vector3(4.5 - 0.6 * i, 0.17, 0.0)))
-	dock.append(_b(Vector3(0.14, 0.7, 0.14), POND_C + Vector3(2.5, 0.35, -0.5)))
-	dock.append(_b(Vector3(0.14, 0.7, 0.14), POND_C + Vector3(2.5, 0.35, 0.5)))
-	var rc := POND_C + Vector3(4.9, 0.0, 0.95)       # the rod stands in its holder at the dock's root
+		dock.append(_b(Vector3(1.0, 0.08, 1.3), POND_C + Vector3(POND_R + 0.4 - 1.1 * i, 0.17, 0.0)))
+	dock.append(_b(Vector3(0.14, 0.7, 0.14), POND_C + Vector3(POND_R - 1.5, 0.35, -0.6)))
+	dock.append(_b(Vector3(0.14, 0.7, 0.14), POND_C + Vector3(POND_R - 1.5, 0.35, 0.6)))
+	var rc := POND_C + Vector3(POND_R + 0.9, 0.0, 1.1)       # the rod stands in its holder at the dock's root
 	var rod: Array = [
 		_b(Vector3(0.1, 0.5, 0.1), rc + Vector3(0, 0.25, 0)),                                            # holder post
 		_b(Vector3(0.06, 1.7, 0.06), rc + Vector3(0, 1.35, 0), "wood", {"tint": Color(0.62, 0.45, 0.25)}),  # shaft

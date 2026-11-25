@@ -619,7 +619,18 @@ func _pred_frame(d: float) -> void:
 			a.target = pp
 			a.has_target = true
 			a.chasing = true
-			if dp < float(info["reach"]) and a.atk_t <= 0.0 and inv_t <= 0.0:
+			var rear := float(info.get("rear", 0.0))
+			if rear > 0.0:
+				if a.rear_state == 1 and a.rear_t <= 0.0:         # finished standing up: strike if still close
+					a.rear_state = 0
+					if dp < float(info["reach"]) + 0.5 and inv_t <= 0.0:
+						_attack_player(a)
+					else:
+						a.atk_t = 1.0
+				elif a.rear_state == 0 and dp < float(info["reach"]) and a.atk_t <= 0.0 and inv_t <= 0.0:
+					a.rear_state = 1
+					a.rear_t = rear
+			elif dp < float(info["reach"]) and a.atk_t <= 0.0 and inv_t <= 0.0:
 				_attack_player(a)
 			continue
 		a.chasing = false

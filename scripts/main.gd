@@ -178,7 +178,7 @@ func _smoke() -> void:
 				rod_ok = false
 			for rp in rb.pieces:
 				GameState.placed[rp.id] = true
-	var shore: Vector3 = load("res://scripts/building_data.gd").POND_C + Vector3(5.2, 0, 0)
+	var shore: Vector3 = load("res://scripts/building_data.gd").POND_C + Vector3(load("res://scripts/building_data.gd").POND_R + 0.9, 0, 0)
 	var fish0 := GameState.count("fish")
 	if not rod_ok or not fishing.has_rod() or not fishing.interact(shore) or fishing.state != "wait":
 		print("SMOKE FAIL: fishing cast")

@@ -7,7 +7,7 @@ signal action(name: String)
 const D := preload("res://scripts/building_data.gd")
 const M := preload("res://scripts/mats.gd")
 const WL := preload("res://scripts/weather_logic.gd")
-const WATER_R := 4.3
+const WATER_R := D.POND_R
 var world
 var pond
 var builder

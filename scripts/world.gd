@@ -36,13 +36,13 @@ func build(removed: Dictionary) -> void:
 	for i in 200:
 		var p := Vector2(rng.randf_range(-40, 40), rng.randf_range(-40, 40))   # 50% closer than before (was +-80)
 		var s := rng.randf_range(0.85, 1.35)
-		if p.length() < 20.0 or removed.has(i):
+		if p.length() < 20.0 or removed.has(i) or _in_lake(p, 3.5):
 			continue
 		_tree(Vector3(p.x, height_at(p.x, p.y), p.y), i, s, rng.randf() * TAU)
 	for i in 70:
 		var p := Vector2(rng.randf_range(-40, 40), rng.randf_range(-40, 40))
 		var sc := rng.randf_range(0.9, 1.8)
-		if p.length() < 20.0 or removed.has(1000 + i):
+		if p.length() < 20.0 or removed.has(1000 + i) or _in_lake(p, 3.0):
 			continue
 		_rock(Vector3(p.x, height_at(p.x, p.y), p.y), 1000 + i, sc, rng.randf() * TAU)
 	_grass(rng)
@@ -132,6 +132,12 @@ func _rock(pos: Vector3, id: int, sc: float, yaw: float) -> void:
 	add_child(b)
 	tree_meshes.append(mi)
 
+## True if the ground point (x, z) is on the lake or its shore margin (no trees / rocks / grass there).
+func _in_lake(p: Vector2, margin: float) -> bool:
+	var c: Vector3 = load("res://scripts/building_data.gd").POND_C
+	var r: float = load("res://scripts/building_data.gd").POND_R
+	return Vector2(p.x - c.x, p.y - c.z).length() < r + margin
+
 func _grass(rng: RandomNumberGenerator) -> void:
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
@@ -144,7 +150,7 @@ func _grass(rng: RandomNumberGenerator) -> void:
 		var z := rng.randf_range(-75, 75)
 		var h := height_at(x, z)
 		var w := _weights(x, z, h)
-		if w.a > 0.4 or w.g > 0.6 or w.b > 0.6:
+		if w.a > 0.4 or w.g > 0.6 or w.b > 0.6 or _in_lake(Vector2(x, z), 1.0):
 			continue
 		pts.append(Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3.ONE * rng.randf_range(0.7, 1.4)), Vector3(x, h, z)))
 	mm.instance_count = pts.size()

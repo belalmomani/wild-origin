@@ -12,7 +12,7 @@ const ANIMALS := {
 	"elk": {"name": "أيل", "hp": 160.0, "walk": 1.3, "run": 11.0, "flee": 20.0, "meat": 9},
 	"turkey": {"name": "ديك رومي", "hp": 45.0, "walk": 0.8, "run": 4.8, "flee": 10.0, "meat": 3},
 	"bird": {"name": "طائر", "hp": 20.0, "walk": 0.0, "run": 0.0, "flee": 0.0, "meat": 1},
-	"bear": {"name": "دب", "hp": 260.0, "walk": 1.6, "run": 9.0, "flee": 0.0, "meat": 14, "predator": true, "reach": 2.3, "detect": 24.0},
+	"bear": {"name": "دب", "hp": 260.0, "walk": 1.6, "run": 9.0, "flee": 0.0, "meat": 14, "predator": true, "reach": 2.9, "detect": 24.0, "rear": 1.4},
 	"wolf": {"name": "ذئب", "hp": 90.0, "walk": 1.8, "run": 11.0, "flee": 0.0, "meat": 6, "predator": true, "reach": 1.9, "detect": 26.0},
 	"fox": {"name": "ثعلب", "hp": 40.0, "walk": 1.6, "run": 10.0, "flee": 0.0, "meat": 3, "predator": true, "reach": 1.2, "detect": 0.0},
 	"chicken": {"name": "دجاجة", "hp": 30.0, "walk": 0.8, "run": 4.2, "flee": 8.0, "meat": 2},

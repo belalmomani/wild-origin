@@ -22,6 +22,8 @@ var gl = null              # original Unity wolf / bear model controller (GltfRi
 var target := Vector3.ZERO
 var has_target := false
 var atk_t := 0.0           # cooldown between attacks on the player
+var rear_t := 0.0          # bear: time left standing on its hind legs before the swipe
+var rear_state := 0        # 0 none, 1 rearing (set by hunt.gd)
 var stuck_t := 0.0         # time spent pushing against the fence
 var leave_t := 0.0         # walking away after an attack / giving up on the fence
 var fences: Array = []   # closed enclosures that stop predators: [{"c": Vector3, "h": half-size}] (set by hunt.gd)
@@ -148,7 +150,8 @@ func _build_model(k: String) -> void:
 
 ## Original Unity wolf / bear (the fox reuses the wolf model, smaller and red-brown tinted: no fox asset was supplied).
 func _build_gltf(k: String) -> void:
-	var sc := {"wolf": 0.7, "bear": 0.7, "fox": 0.42}[k] as float
+	var sc := {"wolf": 0.7, "bear": 1.15, "fox": 0.42}[k] as float
+	var zk := sc / 0.7 if k == "bear" else 1.0
 	var base := "wolf" if k == "fox" else k
 	gl = GltfRig.build(base, self, sc, Color(1.25, 0.72, 0.4) if k == "fox" else Color(1, 1, 1))
 	var zs := {
@@ -156,9 +159,9 @@ func _build_gltf(k: String) -> void:
 		"bear": [Vector3(0.5, 0.5, 0.6), Vector3(0, 0.85, -0.85), Vector3(0.85, 0.8, 1.4), Vector3(0, 0.7, 0.0), Vector3(0.85, 0.6, 1.1), Vector3(0, 0.3, 0.0)],
 		"fox": [Vector3(0.22, 0.22, 0.3), Vector3(0, 0.5, -0.5), Vector3(0.3, 0.32, 0.65), Vector3(0, 0.38, 0.05), Vector3(0.3, 0.35, 0.6), Vector3(0, 0.18, 0.05)],
 	}[k] as Array
-	_zone("head", zs[0], zs[1])
-	_zone("body", zs[2], zs[3])
-	_zone("legs", zs[4], zs[5])
+	_zone("head", zs[0] * zk, zs[1] * zk)
+	_zone("body", zs[2] * zk, zs[3] * zk)
+	_zone("legs", zs[4] * zk, zs[5] * zk)
 
 func _build_bird() -> void:
 	var feather := M.flat(Color(0.32, 0.27, 0.22), 0.9)
@@ -372,6 +375,16 @@ func _play(short: String, speed: float = 1.0) -> void:
 func _predator_tick(d: float, ppos: Vector3, world) -> void:
 	var info: Dictionary = L.ANIMALS[kind]
 	atk_t -= d
+	if rear_t > 0.0:                              # the bear rises on its hind legs first, then strikes
+		rear_t -= d
+		var rv := target - global_position
+		rv.y = 0.0
+		if rv.length() > 0.05:
+			rotation.y = lerp_angle(rotation.y, atan2(-rv.x, -rv.z), 8.0 * d)
+		_rear_pose(d, true)
+		_play("idle_breathe", 1.0)
+		return
+	_rear_pose(d, false)
 	var spd := 0.0
 	var v := target - global_position
 	v.y = 0.0
@@ -436,6 +449,15 @@ func _predator_tick(d: float, ppos: Vector3, world) -> void:
 		_play("cycle_walk", 1.0)
 	else:
 		_play("idle_breathe", 1.0)
+
+## Tilts the model up on its hind legs (up = true) or back down.
+func _rear_pose(d: float, up: bool) -> void:
+	if gl == null or gl.holder == null:
+		return
+	var want := -1.2 if up else 0.0
+	if not up and absf(gl.holder.rotation.x) < 0.001:
+		return
+	gl.holder.rotation.x = lerpf(gl.holder.rotation.x, want, clampf((6.0 if up else 4.0) * d, 0.0, 1.0))
 
 ## Birds circle high above the forest.
 func _bird_tick(d: float, world) -> void:
