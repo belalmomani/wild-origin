@@ -615,10 +615,26 @@ func _on_action(a: String) -> void:
 		"pright": ui.puzzle.scroll_by(1)
 		"hint": _hint()
 		"torch": _torch()
+		"coat": _craft_coat()
 		"home": _go_home()
 		"save":
 			if _save():
 				ui.toast("تم الحفظ ✓")
+
+## Sews a coat from bear / wolf / fox pelts: +2 lives for good.
+func _craft_coat() -> void:
+	if GameState.coat:
+		ui.toast("لديك معطف من الجلد بالفعل (+2 روح)", 2.5)
+		return
+	var have := GameState.count("pelt")
+	if have < HuntLogic.COAT_PELTS:
+		ui.toast("المعطف يحتاج %d جلود (لديك %d). اصطد الدب والذئب والثعلب واجمع جلودها" % [HuntLogic.COAT_PELTS, have], 4.0)
+		return
+	GameState.spend("pelt", HuntLogic.COAT_PELTS)
+	GameState.coat = true
+	GameState.lives += HuntLogic.COAT_LIVES
+	ui.toast("صنعتَ معطفًا من الجلد! +2 روح (الحد الأقصى %d)" % GameState.max_lives(), 4.0)
+	player.play_action("gather", 0.8)
 
 func _open_build() -> void:
 	var bi: int = builder.current_index()
@@ -732,7 +748,9 @@ func _torch() -> void:
 	player.torch.visible = not player.torch.visible
 
 func _on_player_down() -> void:
-	GameState.lives = HuntLogic.LIVES
+	GameState.lives = GameState.max_lives()
+	hunt.grace_t = 25.0
+	hunt.clear_near_predators()
 	_go_home()
 
 func _interact() -> void:
@@ -860,9 +878,11 @@ func _hud() -> void:
 		var cost: String = builder.next_cost(bi)
 		q = "%s — متبقي %d قطعة — لديك %d %s. اجمع ثم اضغط «بناء»" % [b.name, builder.remaining(bi), g.count(cost), "حجارة" if cost == "stone" else "خشب"]
 	var hr := int(g.time_of_day)
-	var res := "خشب %d | حجر %d | بذور %d | تفاح %d | مستوى %d | الوقت %02d:%02d" % [g.count("wood"), g.count("stone"), g.count("seeds"), g.count("apples"), g.level(), hr, int((g.time_of_day - hr) * 60.0)]
-	if g.count("gseeds") + g.count("hay") + g.count("milk") + g.count("fish") > 0:
-		res += "\nبذور علف %d | علف %d | حليب %d | سمك %d" % [g.count("gseeds"), g.count("hay"), g.count("milk"), g.count("fish")]
+	ui.set_stats({"time": "%02d:%02d" % [hr, int((g.time_of_day - hr) * 60.0)], "wood": g.count("wood"), "stone": g.count("stone"), "apples": g.count("apples"), "meat": g.count("meat"), "fish": g.count("fish"), "pelt": g.count("pelt"), "level": g.level()})
+	ui.set_lives(g.lives, g.max_lives())
+	var res := ""
+	if g.count("seeds") + g.count("gseeds") + g.count("hay") + g.count("milk") > 0:
+		res = "بذور %d | بذور علف %d | علف %d | حليب %d" % [g.count("seeds"), g.count("gseeds"), g.count("hay"), g.count("milk")]
 	var night := GameState.is_night()
 	for l in lamp_lights:
 		l.visible = night
@@ -884,7 +904,7 @@ func _hud() -> void:
 	if ct == "":
 		ct = home.info_text(player.global_position)
 	ui.set_crop(ct)
-	res += "\nالأرواح: " + "❤".repeat(GameState.lives) + "🖤".repeat(maxi(0, HuntLogic.LIVES - GameState.lives)) + " | " + hunt.stage_text()
+	res += ("\n" if res != "" else "") + hunt.stage_text()
 	var tt: String = hunt.transit_text()
 	ui.set_hunt(hunt.weapon_text() + ("\n" + tt if tt != "" else ""))
 	ui.set_speed_visible(tt != "")

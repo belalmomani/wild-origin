@@ -3,7 +3,7 @@ extends Node
 const SAVE_PATH := "user://save.json"
 const SETTINGS_PATH := "user://settings.json"
 
-var inv := {"wood": 0, "stone": 0, "seeds": 2, "apples": 0, "arrows": 15, "meat": 0, "hay": 0, "gseeds": 0, "milk": 0, "fish": 0}
+var inv := {"wood": 0, "stone": 0, "seeds": 2, "apples": 0, "arrows": 15, "meat": 0, "hay": 0, "gseeds": 0, "milk": 0, "fish": 0, "pelt": 0}
 var clock_hours := 8.0        # total game hours (time_of_day = clock_hours mod 24)
 var crops: Array = []
 var next_crop_id := 1
@@ -42,6 +42,7 @@ var bucket := 0                # water charges in the bucket
 var pond := 0.0                # lake water level 0..1
 var channel := false           # the wooden channel well -> lake is built
 var harvests := 0              # crops harvested (rewards the well upgrade)
+var coat := false              # coat sewn from bear / wolf pelts: +2 lives
 var sens_idx := 1              # camera sensitivity: 0 low, 1 normal, 2 high
 var fire_fuel := 0.0           # game hours of fire left in the hearth
 var hearth_init := false       # the first fire has been lit (gift of 8 hours)
@@ -58,7 +59,7 @@ var move := Vector2.ZERO
 var cam_delta := Vector2.ZERO
 
 func reset() -> void:
-	inv = {"wood": 0, "stone": 0, "seeds": 2, "apples": 0, "arrows": 15, "meat": 0, "hay": 0, "gseeds": 0, "milk": 0, "fish": 0}
+	inv = {"wood": 0, "stone": 0, "seeds": 2, "apples": 0, "arrows": 15, "meat": 0, "hay": 0, "gseeds": 0, "milk": 0, "fish": 0, "pelt": 0}
 	barn_unlocked = false
 	barn_built = false
 	fire_fuel = 0.0
@@ -75,6 +76,7 @@ func reset() -> void:
 	well = 0
 	bucket = 0
 	harvests = 0
+	coat = false
 	pond = 0.0
 	channel = false
 	pen = []
@@ -99,11 +101,14 @@ func reset() -> void:
 func has_tech(id: String) -> bool:
 	return techs.has(id)
 
+func max_lives() -> int:
+	return 5 + (2 if coat else 0)
+
 func cap_of(k: String) -> int:
 	match k:
 		"wood", "stone":
 			return 400 if has_tech("storage") else 150
-		"apples", "meat", "hay", "milk", "fish":
+		"apples", "meat", "hay", "milk", "fish", "pelt":
 			return 100 if has_tech("storage") else 40
 	return 99999
 
@@ -144,7 +149,7 @@ func to_dict() -> Dictionary:
 	return {"v": 1, "inv": inv, "placed": placed.keys(), "removed": removed.keys(),
 		"pos": [player_pos.x, player_pos.y, player_pos.z], "t": time_of_day,
 		"hints": hints_left, "phase": phase, "xp": xp, "torch": torch_owned,
-		"clock": clock_hours, "weapons": weapons, "widx": weapon_idx, "livestock": livestock, "animals": animals, "pen": pen, "techs": techs, "npid": next_pen_id, "barn_u": barn_unlocked, "fuel": fire_fuel, "dbase": diff_base, "cacc": cost_acc, "hinit": hearth_init, "drag": drag_kind, "crops": crops, "ncid": next_crop_id, "lives": lives, "hstage": hunt_stage, "stn": stage_n, "well": well, "bucket": bucket, "harv": harvests, "pond": pond, "channel": channel, "saved": Time.get_unix_time_from_system()}
+		"clock": clock_hours, "weapons": weapons, "widx": weapon_idx, "livestock": livestock, "animals": animals, "pen": pen, "techs": techs, "npid": next_pen_id, "barn_u": barn_unlocked, "fuel": fire_fuel, "dbase": diff_base, "cacc": cost_acc, "hinit": hearth_init, "drag": drag_kind, "crops": crops, "ncid": next_crop_id, "lives": lives, "hstage": hunt_stage, "stn": stage_n, "well": well, "bucket": bucket, "harv": harvests, "pond": pond, "channel": channel, "coat": coat, "saved": Time.get_unix_time_from_system()}
 
 func from_dict(d: Dictionary) -> void:
 	reset()
@@ -188,6 +193,7 @@ func from_dict(d: Dictionary) -> void:
 	well = int(d.get("well", 0))
 	bucket = int(d.get("bucket", 0))
 	harvests = int(d.get("harv", 0))
+	coat = bool(d.get("coat", false))
 	pond = clampf(float(d.get("pond", 0.0)), 0.0, 1.0)
 	channel = bool(d.get("channel", false))
 	clock_hours = float(d.get("clock", 8.0))

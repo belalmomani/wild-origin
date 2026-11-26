@@ -12,9 +12,9 @@ const ANIMALS := {
 	"elk": {"name": "أيل", "hp": 160.0, "walk": 1.3, "run": 11.0, "flee": 20.0, "meat": 9},
 	"turkey": {"name": "ديك رومي", "hp": 45.0, "walk": 0.8, "run": 4.8, "flee": 10.0, "meat": 3},
 	"bird": {"name": "طائر", "hp": 20.0, "walk": 0.0, "run": 0.0, "flee": 0.0, "meat": 1},
-	"bear": {"name": "دب", "hp": 260.0, "walk": 1.6, "run": 9.0, "flee": 0.0, "meat": 14, "predator": true, "reach": 2.9, "detect": 24.0, "rear": 1.4},
-	"wolf": {"name": "ذئب", "hp": 90.0, "walk": 1.8, "run": 11.0, "flee": 0.0, "meat": 6, "predator": true, "reach": 1.9, "detect": 26.0},
-	"fox": {"name": "ثعلب", "hp": 40.0, "walk": 1.6, "run": 10.0, "flee": 0.0, "meat": 3, "predator": true, "reach": 1.2, "detect": 0.0},
+	"bear": {"name": "دب", "hp": 260.0, "walk": 1.6, "run": 9.0, "flee": 0.0, "meat": 14, "pelt": 2, "predator": true, "reach": 2.9, "detect": 24.0, "rear": 1.4},
+	"wolf": {"name": "ذئب", "hp": 90.0, "walk": 1.8, "run": 11.0, "flee": 0.0, "meat": 6, "pelt": 1, "predator": true, "reach": 1.9, "detect": 26.0},
+	"fox": {"name": "ثعلب", "hp": 40.0, "walk": 1.6, "run": 10.0, "flee": 0.0, "meat": 3, "pelt": 1, "predator": true, "reach": 1.2, "detect": 0.0},
 	"chicken": {"name": "دجاجة", "hp": 30.0, "walk": 0.8, "run": 4.2, "flee": 8.0, "meat": 2},
 }
 ## Capture stages: only the current stage's animals can be caught alive (others can only be killed for meat).
@@ -24,6 +24,10 @@ const STAGES := [
 	{"kinds": ["chicken", "turkey"], "goal": 10, "name": "الدجاج والديك الرومي"},
 ]
 const LIVES := 5
+const COAT_LIVES := 2      # a coat sewn from pelts adds two lives
+const COAT_PELTS := 3
+const SAFE_R := 26.0       # predators never hunt the player within this distance of the house / farm / barn
+const BEAR_RESPAWN_HOURS := 48.0   # a killed bear stays dead for two game days
 
 static func is_predator(kind: String) -> bool:
 	return bool(ANIMALS[kind].get("predator", false))

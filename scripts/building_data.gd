@@ -8,8 +8,8 @@ const BED_C := Vector3(-1.35, 0, -0.85)
 const HEARTH_C := Vector3(1.3, 0, -1.45)
 const LAMP_POS := Vector3(0, 2.33, 0)
 const POND_C := Vector3(-34, 0, 22)  # the lake, a little way from the house (world.gd carves the basin and flattens the shore)
-const POND_R := 11.0                 # lake radius: a real, deep lake
-const POND_DEPTH := 2.6              # depth at the middle
+const POND_R := 17.0                 # lake radius: a real, wide lake
+const POND_DEPTH := 3.6              # depth at the middle
 const WATER_Y := -0.35               # water surface (the shore is at ground level 0)
 const FARM_C := Vector3(-14, 0, 0)  # fenced farm, west of the house (gate on its east side, facing the house)
 ## Hinged doors / gates. board = puzzle board that builds it, c = centre, out = the side it swings to,

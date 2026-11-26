@@ -23,6 +23,9 @@ var drag_busy := false
 var animals: Array = []
 var pond                            # the lake (set by main): wild animals and birds gather there to drink
 var gate_open_cb := Callable()     # set by main: is the farm gate open? (predators can walk in then)
+var grace_t := 0.0                  # no attacks for a while after returning home
+var _bear_alive := false
+var _bear_dead_clock := -999.0
 var inv_t := 0.0                    # the player cannot lose another life for a moment after an attack
 var _aim_t := 0.0
 var _pred_t := 3.0
@@ -304,10 +307,13 @@ func apply_hit(a, zone: String) -> void:
 func _loot(a) -> void:
 	var n: int = L.ANIMALS[a.kind]["meat"]
 	GameState.add("meat", n)
+	var pn: int = int(L.ANIMALS[a.kind].get("pelt", 0))
+	if pn > 0:
+		GameState.add("pelt", pn)
 	GameState.xp += 1
 	animals.erase(a)
 	get_tree().create_timer(0.7).timeout.connect(a.queue_free)
-	message.emit("+%d طعام" % n)
+	message.emit("+%d طعام" % n + (" و+%d جلد" % pn if pn > 0 else ""))
 
 ## Loot a dead animal or catch a wounded one that is close. Returns true if something was handled.
 func interact_nearby() -> bool:
@@ -572,6 +578,11 @@ func _pred_manage() -> void:
 				if Vector2(a.global_position.x - player.global_position.x, a.global_position.z - player.global_position.z).length() > 45.0:
 					animals.erase(a)
 					a.queue_free()
+	if int(cnt["bear"]) > 0:
+		_bear_alive = true
+	elif _bear_alive:
+		_bear_alive = false
+		_bear_dead_clock = GameState.clock_hours      # a killed bear does not come back for two days
 	_pred_t -= 0.5
 	if _pred_t > 0.0:
 		return
@@ -579,7 +590,7 @@ func _pred_manage() -> void:
 	var started := not GameState.pen.is_empty() or GameState.level() >= 3
 	if not started:
 		return
-	if int(cnt["bear"]) < 1:
+	if int(cnt["bear"]) < 1 and GameState.clock_hours - _bear_dead_clock >= L.BEAR_RESPAWN_HOURS:
 		_spawn_pred("bear")
 	if night and int(cnt["wolf"]) < 2:
 		_spawn_pred("wolf")
@@ -589,11 +600,10 @@ func _pred_manage() -> void:
 func _spawn_pred(kind: String) -> void:
 	var a := AnimalS.new()
 	a.setup(kind, _rng.randi())
-	var c: Vector3 = barn.farm_center if barn != null else Vector3.ZERO
 	var ang := _rng.randf() * TAU
-	var p := c + Vector3(cos(ang), 0, sin(ang)) * _rng.randf_range(34.0, 48.0)
-	if Vector2(p.x - player.global_position.x, p.z - player.global_position.z).length() < 28.0:
-		p = c - (p - c)
+	var p := Vector3(cos(ang), 0, sin(ang)) * _rng.randf_range(54.0, 66.0)     # far out in the forest, never near the house
+	if Vector2(p.x - player.global_position.x, p.z - player.global_position.z).length() < 40.0:
+		p = -p
 	p.x = clampf(p.x, -66.0, 66.0)
 	p.z = clampf(p.z, -66.0, 66.0)
 	a.position = Vector3(p.x, world.height_at(p.x, p.z), p.z)
@@ -601,9 +611,18 @@ func _spawn_pred(kind: String) -> void:
 	animals.append(a)
 	message.emit("سُمع زئير %s قريبًا!" % L.ANIMALS[kind]["name"] if kind == "bear" else "اقترب %s من المزرعة في الظلام!" % L.ANIMALS[kind]["name"])
 
+## Removes predators close to the house (used when the player is carried home after being downed).
+func clear_near_predators() -> void:
+	for a in animals.duplicate():
+		if is_instance_valid(a) and a.predator and not a.dead and Vector2(a.global_position.x, a.global_position.z).length() < 45.0:
+			animals.erase(a)
+			a.queue_free()
+
 func _pred_frame(d: float) -> void:
+	grace_t = maxf(0.0, grace_t - d)
 	var fc := _fences()
 	var pp: Vector3 = player.global_position
+	var safe := Vector2(pp.x, pp.z).length() < L.SAFE_R
 	for a in animals:
 		if not is_instance_valid(a) or not a.predator or a.dead:
 			continue
@@ -613,6 +632,11 @@ func _pred_frame(d: float) -> void:
 		var dp := Vector2(gp.x - pp.x, gp.z - pp.z).length()
 		if a.leave_t > 0.0:
 			a.has_target = false
+			continue
+		if safe or grace_t > 0.0:                  # the yard is safe: hunters neither wait at the door nor follow you in
+			a.has_target = false
+			if Vector2(gp.x, gp.z).length() < L.SAFE_R + 4.0:
+				a.leave_t = 6.0
 			continue
 		var det := float(info["detect"]) * (0.5 if player.crouch else 1.0)
 		if det > 0.0 and dp < det:
@@ -656,6 +680,8 @@ func _pred_frame(d: float) -> void:
 			_eat_pen_animal(a, best["pa"])
 
 func _attack_player(a) -> void:
+	if grace_t > 0.0:
+		return
 	a.atk_t = 3.0
 	inv_t = 2.5
 	GameState.lives -= 1

@@ -70,7 +70,7 @@ func _build() -> void:
 
 func _make_fish() -> void:
 	var skin := [Color(0.75, 0.78, 0.82), Color(0.85, 0.5, 0.2), Color(0.5, 0.62, 0.45)]
-	for i in 14:
+	for i in 26:
 		var f := Node3D.new()
 		var body := MeshInstance3D.new()
 		var sm := SphereMesh.new()

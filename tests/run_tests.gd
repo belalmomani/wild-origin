@@ -355,4 +355,22 @@ func _init() -> void:
 			print("FAIL forecast while raining"); fails += 1
 	if WLg.evap_mult(8) <= WLg.evap_mult(24) or WLg.growth(24) >= WLg.growth(0):
 		print("FAIL season multipliers"); fails += 1
+	# phase 8: pelts, coat, safe zone, bear respawn delay
+	var SHx = load("res://scripts/hunt_logic.gd")
+	if int(SHx.ANIMALS["bear"]["pelt"]) < 2 or int(SHx.ANIMALS["wolf"]["pelt"]) < 1 or SHx.BEAR_RESPAWN_HOURS < 24.0 or SHx.SAFE_R < 20.0:
+		print("FAIL pelts / safe zone / bear respawn constants"); fails += 1
+	var gsc = load("res://scripts/game_state.gd").new()
+	if gsc.max_lives() != 5:
+		print("FAIL base lives"); fails += 1
+	gsc.coat = true
+	gsc.add("pelt", 3)
+	var gsd = load("res://scripts/game_state.gd").new()
+	gsd.from_dict(JSON.parse_string(JSON.stringify(gsc.to_dict())))
+	if not gsd.coat or gsd.max_lives() != 7 or gsd.count("pelt") != 3:
+		print("FAIL coat / pelt save round-trip"); fails += 1
+	gsc.free()
+	gsd.free()
+	var BDx = load("res://scripts/building_data.gd")
+	if BDx.POND_R < 15.0 or BDx.POND_DEPTH < 3.0:
+		print("FAIL lake must be big and deep"); fails += 1
 	quit(1 if fails > 0 else 0)

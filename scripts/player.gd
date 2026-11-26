@@ -4,6 +4,7 @@ extends CharacterBody3D
 const SPEED := 5.2          # full-stick run speed; walking = partial stick
 const CROUCH_SPEED := 2.0
 const JUMP := 6.0
+const D := preload("res://scripts/building_data.gd")
 const CharacterS := preload("res://scripts/character.gd")
 const HeroRigS := preload("res://scripts/hero_rig.gd")
 const HeroSkinnedS := preload("res://scripts/hero_skinned.gd")
@@ -185,7 +186,9 @@ func _physics_process(d: float) -> void:
 		carry_t -= d
 	var locked := intro_lock or action != ""
 	var m := GameState.move if not locked else Vector2.ZERO
-	var top := (CROUCH_SPEED if crouch else SPEED) * (0.5 if aiming else 1.0) * speed_mult
+	var lake_r: float = D.POND_R * (0.45 + 0.55 * clampf(GameState.pond, 0.0, 1.0))
+	var swimming: bool = Vector2(position.x - D.POND_C.x, position.z - D.POND_C.z).length() < lake_r and position.y < D.WATER_Y - 0.8
+	var top := (CROUCH_SPEED if crouch else SPEED) * (0.5 if aiming else 1.0) * speed_mult * (0.45 if swimming else 1.0)
 	if not intro_lock:
 		var k := clampf(8.0 * d, 0.0, 1.0)
 		arm.spring_length = lerpf(arm.spring_length, 0.25 if scoped else (2.3 if aiming else 4.2), k)
@@ -206,7 +209,9 @@ func _physics_process(d: float) -> void:
 	jump_req = false
 	jump_buf = maxf(0.0, jump_buf - d)
 	coyote = 0.12 if is_on_floor() else maxf(0.0, coyote - d)
-	if jump_buf > 0.0 and coyote > 0.0 and not crouch and not locked:
+	if swimming:                                   # float at the surface instead of walking on the lake bed
+		velocity.y = clampf((D.WATER_Y - 1.15 - position.y) * 4.0, -4.0, 3.0)
+	elif jump_buf > 0.0 and coyote > 0.0 and not crouch and not locked:
 		velocity.y = JUMP
 		jump_buf = 0.0
 		coyote = 0.0

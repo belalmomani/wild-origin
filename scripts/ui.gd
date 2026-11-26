@@ -47,7 +47,24 @@ var quest_bg: Panel
 var _res_lines := 1
 
 const GOLD := Color(0.96, 0.78, 0.28)
-const CIRCLE_BTNS := ["interact", "fire", "jump", "crouch", "aim", "weapon", "scope", "torch", "plant", "water", "build"]
+const CIRCLE_BTNS := ["interact", "fire", "jump", "crouch", "aim", "scope", "build", "more"]
+const ICON_PATH := "res://assets/ui/icons/"
+const ICON_BTNS := {"jump": "jump", "crouch": "crouch", "aim": "aim", "build": "build", "scope": "scope", "more": "menu", "fire": "fire", "interact": "hand"}
+const DRAWER := ["torch", "plant", "water", "tech", "save", "home", "weapon", "coat"]
+const STAT_KEYS := ["time", "wood", "stone", "apples", "meat", "fish", "pelt", "level"]
+const STAT_ICONS := {"time": "clock", "wood": "wood", "stone": "stone", "apples": "apple", "meat": "meat", "fish": "fish", "pelt": "pelt", "level": "star"}
+var pill: Panel
+var stat_ic := {}
+var stat_lb := {}
+var stat_on := {}
+var life_bg: Panel
+var life_fill: Panel
+var life_lb: Label
+var life_heart: TextureRect
+var drawer_bg: Panel
+var drawer_btns: Array = []
+var drawer_open := false
+var _life_ratio := 1.0
 
 func _ready() -> void:
 	layer = 10
@@ -64,11 +81,46 @@ func _ready() -> void:
 	tech.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	tech.visible = false
 	add_child(tech)
+	pill = _card(Color(0.04, 0.07, 0.07, 0.72))
+	for k in STAT_KEYS:
+		var ic := TextureRect.new()
+		ic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		ic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		ic.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		if ResourceLoader.exists(ICON_PATH + STAT_ICONS[k] + ".png"):
+			ic.texture = load(ICON_PATH + STAT_ICONS[k] + ".png")
+		add_child(ic)
+		stat_ic[k] = ic
+		var lb := _label(32)
+		lb.text_direction = Control.TEXT_DIRECTION_LTR
+		lb.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+		stat_lb[k] = lb
+		stat_on[k] = true
+	life_bg = _card(Color(0.04, 0.07, 0.07, 0.72))
+	life_heart = TextureRect.new()
+	life_heart.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	life_heart.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	life_heart.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	if ResourceLoader.exists(ICON_PATH + "heart.png"):
+		life_heart.texture = load(ICON_PATH + "heart.png")
+	add_child(life_heart)
+	var lback := Panel.new()
+	lback.add_theme_stylebox_override("panel", _sbox(Color(0.1, 0.12, 0.1, 0.9), Color(0, 0, 0, 0.6), 12, 2))
+	lback.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	lback.name = "LifeBack"
+	add_child(lback)
+	life_fill = Panel.new()
+	life_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(life_fill)
+	life_lb = _label(24)
+	life_lb.text_direction = Control.TEXT_DIRECTION_LTR
+	drawer_bg = _card(Color(0.04, 0.07, 0.07, 0.85))
+	drawer_bg.visible = false
 	res_bg = _card(Color(0.05, 0.08, 0.07, 0.62))
 	quest_bg = _card(Color(0.05, 0.08, 0.07, 0.62))
 	title_label = _label(64)
 	title_label.text = "WILD ORIGIN\nبداية العالم"
-	res_label = _label(24)
+	res_label = _label(21)
 	quest_label = _label(24)
 	quest_label.add_theme_color_override("font_color", Color(1.0, 0.92, 0.6))
 	toast_label = _label(30)
@@ -124,7 +176,7 @@ func _ready() -> void:
 	stick_base = _circle(190, Color(1, 1, 1, 0.14), Color(1, 1, 1, 0.55), 4)
 	stick_knob = _circle(84, Color(1, 1, 1, 0.5), Color(1, 1, 1, 0.9), 3)
 	for n in [["new", "لعبة جديدة", "menu"], ["continue", "متابعة اللعبة", "menu"], ["quality", "الجودة", "menu"], ["sound", "الصوت", "menu"], ["day", "مدة اليوم", "menu"], ["gentle", "تخفيف المشاهد", "menu"], ["sens", "الحساسية", "menu"],
-			["jump", "قفز", "hud"], ["interact", "تفاعل", "hud"], ["build", "بناء", "hud"], ["torch", "مشعل", "hud"], ["crouch", "انحناء", "hud"], ["plant", "زرع", "hud"], ["water", "سقي", "hud"], ["tech", "تقنيات", "hud"], ["tresearch", "تطوير", "tech"], ["tclose", "إغلاق", "tech"], ["tup", "▲", "tech"], ["tdown", "▼", "tech"], ["aim", "تصويب", "hud"], ["weapon", "سلاح", "hud"], ["speed", "تسريع", "special"], ["scope", "عدسة", "special"], ["fire", "إطلاق", "special"], ["save", "حفظ", "hud"], ["home", "🏠 المنزل", "hud"],
+			["more", "", "hud"], ["coat", "معطف", "hud"], ["jump", "قفز", "hud"], ["interact", "تفاعل", "hud"], ["build", "بناء", "hud"], ["torch", "مشعل", "hud"], ["crouch", "انحناء", "hud"], ["plant", "زرع", "hud"], ["water", "سقي", "hud"], ["tech", "تقنيات", "hud"], ["tresearch", "تطوير", "tech"], ["tclose", "إغلاق", "tech"], ["tup", "▲", "tech"], ["tdown", "▼", "tech"], ["aim", "تصويب", "hud"], ["weapon", "سلاح", "hud"], ["speed", "تسريع", "special"], ["scope", "عدسة", "special"], ["fire", "إطلاق", "special"], ["save", "حفظ", "hud"], ["home", "🏠 المنزل", "hud"],
 			["hint", "تلميح", "puzzle"], ["pnext", "لوحة أخرى ▸", "puzzle"], ["pclose", "إغلاق", "puzzle"], ["pleft", "◀", "puzzle"], ["pright", "▶", "puzzle"]]:
 		_btn(n[0], n[1], n[2])
 	get_viewport().size_changed.connect(_layout)
@@ -213,8 +265,19 @@ func _btn(n: String, text: String, group: String) -> void:
 	b.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	b.add_theme_font_size_override("font_size", 28)
 	_style_button(b, n, group)
+	if ICON_BTNS.has(n) and ResourceLoader.exists(ICON_PATH + str(ICON_BTNS[n]) + ".png"):
+		b.icon = load(ICON_PATH + str(ICON_BTNS[n]) + ".png")
+		b.expand_icon = true
+		if n != "interact" and n != "fire":
+			b.text = ""
+			b.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		else:
+			b.vertical_icon_alignment = VERTICAL_ALIGNMENT_TOP
+			b.add_theme_constant_override("icon_max_width", 64)
 	add_child(b)
 	buttons[n] = b
+	if DRAWER.has(n):
+		drawer_btns.append(b)
 	match group:
 		"menu": menu_btns.append(b)
 		"hud": hud_btns.append(b)
@@ -223,8 +286,14 @@ func _btn(n: String, text: String, group: String) -> void:
 		_: puzzle_btns.append(b)
 
 func _put(n: String, pos: Vector2, sz: Vector2) -> void:
-	buttons[n].position = pos
-	buttons[n].size = sz
+	var b: Button = buttons[n]
+	b.position = pos
+	b.size = sz
+	if b.icon != null and b.text == "":
+		b.add_theme_constant_override("icon_max_width", int(minf(sz.x, sz.y) * 0.6))
+
+func _circ(n: String, cx: float, cy: float, r: float) -> void:
+	_put(n, Vector2(cx - r, cy - r), Vector2(r * 2.0, r * 2.0))
 
 func _layout() -> void:
 	var vp := get_viewport().get_visible_rect().size
@@ -251,17 +320,11 @@ func _layout() -> void:
 	hunt_label.size = Vector2(vp.x, 30)
 	crosshair.position = Vector2(vp.x * 0.5 - 30.0, vp.y * 0.5 - 38.0)
 	crosshair.size = Vector2(60, 60)
-	_put("tech", Vector2(vp.x - 150, 10), Vector2(130, 60))
 	_put("tresearch", Vector2(vp.x / 2.0 - 170.0, vp.y - 110.0), Vector2(340, 90))
 	_put("tclose", Vector2(20, vp.y - 110.0), Vector2(160, 90))
 	_put("tup", Vector2(vp.x - 200.0, vp.y - 110.0), Vector2(80, 90))
 	_put("tdown", Vector2(vp.x - 100.0, vp.y - 110.0), Vector2(80, 90))
 	tech.layout(vp)
-	_put("aim", Vector2(vp.x - 650, vp.y - 130), Vector2(130, 110))
-	_put("weapon", Vector2(vp.x - 510, vp.y - 250), Vector2(130, 100))
-	_put("speed", Vector2(20, 84), Vector2(170, 64))
-	_put("fire", Vector2(vp.x - 230, vp.y - 455), Vector2(210, 140))
-	_put("scope", Vector2(vp.x - 370, vp.y - 445), Vector2(130, 120))
 	scope_img.position = Vector2((vp.x - vp.y) * 0.5, 0)
 	scope_img.size = Vector2(vp.y, vp.y)
 	bar_l.position = Vector2.ZERO
@@ -271,15 +334,6 @@ func _layout() -> void:
 	crop_label.position = Vector2(0, 96)
 	crop_label.size = Vector2(vp.x, 70)
 	# right-hand cluster, tidy grid: big «تفاعل» at the corner, jump/crouch beside it, the rest in rows above
-	_put("interact", Vector2(vp.x - 230, vp.y - 170), Vector2(210, 150))
-	_put("jump", Vector2(vp.x - 370, vp.y - 130), Vector2(130, 110))
-	_put("crouch", Vector2(vp.x - 370, vp.y - 250), Vector2(130, 100))
-	_put("build", Vector2(vp.x - 230, vp.y - 282), Vector2(210, 100))
-	_put("torch", Vector2(vp.x - 510, vp.y - 130), Vector2(130, 110))
-	_put("plant", Vector2(vp.x - 650, vp.y - 250), Vector2(130, 100))
-	_put("water", Vector2(vp.x - 650, vp.y - 360), Vector2(130, 100))
-	_put("save", Vector2(20, 10), Vector2(110, 60))
-	_put("home", Vector2(140, 10), Vector2(170, 60))
 	bar_top.position = Vector2.ZERO
 	bar_top.size = Vector2(vp.x, vp.y * 0.12)
 	bar_bot.position = Vector2(0, vp.y * 0.88)
@@ -292,31 +346,113 @@ func _layout() -> void:
 	_put("pleft", Vector2(vp.x * 0.04, vp.y * 0.7), Vector2(56, 110))
 	_put("pright", Vector2(vp.x * 0.96 - 56.0, vp.y * 0.7), Vector2(56, 110))
 	puzzle.layout(vp)
+	# --- touch controls: a few big round buttons on the right thumb; everything else lives in the ☰ drawer
+	var k := clampf(vp.y / 1080.0, 0.55, 1.25)
+	var w := vp.x
+	var h := vp.y
+	_circ("interact", w - 135 * k, h - 135 * k, 98 * k)
+	_circ("aim", w - 345 * k, h - 105 * k, 64 * k)
+	_circ("crouch", w - 490 * k, h - 95 * k, 52 * k)
+	_circ("jump", w - 120 * k, h - 345 * k, 64 * k)
+	_circ("build", w - 330 * k, h - 255 * k, 58 * k)
+	_circ("fire", w - 330 * k, h - 255 * k, 82 * k)
+	_circ("scope", w - 120 * k, h - 500 * k, 56 * k)
+	_circ("more", w - 72 * k, 66 * k, 46 * k)
+	_put("speed", Vector2(20, 96 * k), Vector2(170, 64))
+	var dx := w - 420 * k
+	var dy := 130 * k
+	var order := ["torch", "plant", "water", "tech", "save", "home", "weapon", "coat"]
+	for i in order.size():
+		_put(order[i], Vector2(dx + float(i % 2) * 200.0 * k, dy + float(i / 2) * 90.0 * k), Vector2(190.0 * k, 80.0 * k))
+	drawer_bg.position = Vector2(dx - 14, dy - 14)
+	drawer_bg.size = Vector2(400.0 * k + 28.0, 4.0 * 90.0 * k + 18.0)
+	_place_hud()
+
+func set_stats(d: Dictionary) -> void:
+	for key in STAT_KEYS:
+		var v = d.get(key, 0)
+		stat_lb[key].text = str(v)
+		stat_on[key] = not ((key == "fish" or key == "pelt") and str(v) == "0")
+	_place_hud()
+
+## Lives bar (top-left): hearts icon + a bar that shrinks from green to red.
+func set_lives(cur: int, mx: int) -> void:
+	_life_ratio = clampf(float(cur) / float(maxi(1, mx)), 0.0, 1.0)
+	life_lb.text = "%d / %d" % [cur, mx]
 	_place_hud()
 
 ## Stacks the HUD cards: resources on top, the quest card under it, then crop / hunt lines.
 func _place_hud() -> void:
 	var vp := get_viewport().get_visible_rect().size
+	var k := clampf(vp.y / 1080.0, 0.55, 1.25)
+	var show := not in_menu and not in_puzzle and not in_tech
+	# top pill: icon + number pairs (time, wood, stone, apples, meat, fish, pelts, level)
+	var total := 28.0 * k
+	for key in STAT_KEYS:
+		if stat_on[key]:
+			total += (200.0 if key == "time" else 138.0) * k
+	var px := maxf(360.0 * k, (vp.x - total) * 0.5)
+	var ph := 70.0 * k
+	pill.position = Vector2(px, 8)
+	pill.size = Vector2(total, ph)
+	var sx := px + 14.0 * k
+	for key in STAT_KEYS:
+		var on: bool = stat_on[key]
+		stat_ic[key].visible = show and on
+		stat_lb[key].visible = show and on
+		if not on:
+			continue
+		var sw := (200.0 if key == "time" else 138.0) * k
+		stat_ic[key].position = Vector2(sx, 8 + ph * 0.5 - 24.0 * k)
+		stat_ic[key].size = Vector2(48.0 * k, 48.0 * k)
+		stat_lb[key].position = Vector2(sx + 54.0 * k, 8 + ph * 0.5 - 22.0 * k)
+		stat_lb[key].size = Vector2(sw - 58.0 * k, 44.0 * k)
+		sx += sw
+	pill.visible = show
+	# lives (top-left)
+	life_bg.position = Vector2(16, 8)
+	life_bg.size = Vector2(330.0 * k, ph)
+	life_heart.position = Vector2(26, 8 + ph * 0.5 - 24.0 * k)
+	life_heart.size = Vector2(48.0 * k, 48.0 * k)
+	var bx := 84.0 * k
+	var bw := 236.0 * k
+	var back := get_node_or_null("LifeBack") as Panel
+	if back != null:
+		back.position = Vector2(bx, 8 + ph * 0.5 - 13.0 * k)
+		back.size = Vector2(bw, 26.0 * k)
+		back.visible = show
+	life_fill.position = back.position + Vector2(3, 3)
+	life_fill.size = Vector2(maxf(0.0, (bw - 6.0) * _life_ratio), 20.0 * k)
+	life_fill.add_theme_stylebox_override("panel", _sbox(Color(0.85, 0.2, 0.15).lerp(Color(0.3, 0.8, 0.2), _life_ratio), Color(0, 0, 0, 0), 9, 0))
+	life_fill.visible = show and _life_ratio > 0.01
+	life_lb.position = Vector2(bx, 8 + ph * 0.5 - 13.0 * k)
+	life_lb.size = Vector2(bw, 26.0 * k)
+	life_bg.visible = show
+	life_heart.visible = show
+	life_lb.visible = show
+	# extra info + quest cards under the pill
 	var w := minf(vp.x * 0.62, 1180.0)
 	var x := (vp.x - w) * 0.5
-	var rh := 18.0 + 33.0 * float(_res_lines)
-	res_bg.position = Vector2(x, 6)
+	var ry := 8.0 + ph + 8.0
+	var rh := 14.0 + 28.0 * float(_res_lines)
+	res_bg.position = Vector2(x, ry)
 	res_bg.size = Vector2(w, rh)
-	res_label.position = Vector2(0, 14)
+	res_label.position = Vector2(0, ry + 8.0)
 	res_label.size = Vector2(vp.x, rh)
-	var qy := 6.0 + rh + 6.0
+	var qy := ry + rh + 6.0
 	quest_bg.position = Vector2(x, qy)
 	quest_bg.size = Vector2(w, 54)
 	quest_label.position = Vector2(0, qy + 10.0)
 	quest_label.size = Vector2(vp.x, 40)
 	crop_label.position = Vector2(0, qy + 62.0)
 	hunt_label.position = Vector2(0, qy + 132.0)
-	var show := not in_menu and not in_puzzle and not in_tech
-	res_bg.visible = show
+	res_bg.visible = show and res_label.text != ""
 	quest_bg.visible = show and quest_label.text != ""
+	drawer_bg.visible = show and drawer_open
 
 func show_menu(has_save: bool) -> void:
 	in_menu = true
+	drawer_open = false
 	_set_mode()
 	buttons["continue"].disabled = not has_save
 
@@ -352,7 +488,7 @@ func _set_mode() -> void:
 	for b in menu_btns:
 		b.visible = in_menu
 	for b in hud_btns:
-		b.visible = not in_menu and not in_puzzle and not in_tech
+		b.visible = not in_menu and not in_puzzle and not in_tech and (not drawer_btns.has(b) or drawer_open)
 	for b in tech_btns:
 		b.visible = in_tech
 	for b in puzzle_btns:
@@ -410,6 +546,7 @@ func set_hunt(text: String) -> void:
 func _special() -> void:
 	var show_hud := not in_menu and not in_puzzle and not in_tech
 	buttons["fire"].visible = show_hud and aim_on
+	buttons["build"].visible = show_hud and not aim_on
 	buttons["speed"].visible = show_hud and speed_on
 	buttons["scope"].visible = show_hud and aim_on
 	crosshair.visible = show_hud and aim_on and not scope_on
@@ -481,7 +618,14 @@ func _press(idx: int, pos: Vector2) -> void:
 	for n in buttons:
 		var b: Button = buttons[n]
 		if b.is_visible_in_tree() and not b.disabled and b.get_global_rect().has_point(pos):
+			if n == "more":
+				drawer_open = not drawer_open
+				_set_mode()
+				return
 			action.emit(n)
+			if drawer_open and drawer_btns.has(b):
+				drawer_open = false
+				_set_mode()
 			return
 	if in_menu:
 		return

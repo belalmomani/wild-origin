@@ -123,7 +123,9 @@ func setup(k: String, seed_v: int) -> void:
 	add_to_group("animal")
 	predator = L.is_predator(k)
 	if k == "elk":
-		_build_elk()
+		_build_elk(1.0)
+	elif k == "deer":
+		_build_elk(0.72)
 	elif k == "wolf" or k == "bear" or k == "fox":
 		_build_gltf(k)
 	elif k == "bird":
@@ -179,11 +181,12 @@ func _build_bird() -> void:
 	_zone("body", Vector3(0.9, 0.3, 0.8), Vector3.ZERO)
 
 ## Skinned elk from the Unity prefab (textured mesh + 34 bones).
-func _build_elk() -> void:
+func _build_elk(sc: float) -> void:
 	elk = ElkRig.build(self)
+	elk.skel.scale = Vector3.ONE * sc
 	var z: Dictionary = ElkRig.zones()
 	for zn in ["head", "body", "legs"]:
-		_zone(zn, z[zn]["size"], z[zn]["pos"])
+		_zone(zn, (z[zn]["size"] as Vector3) * sc, (z[zn]["pos"] as Vector3) * sc)
 
 func flinch() -> void:
 	hurt_t = 0.5
