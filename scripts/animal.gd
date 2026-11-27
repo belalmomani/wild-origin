@@ -2,6 +2,7 @@ extends Node3D
 ## Wild animal (deer / chicken): procedural 3D body with walking legs, wander/flee AI, hit zones for shooting.
 const M := preload("res://scripts/mats.gd")
 const L := preload("res://scripts/hunt_logic.gd")
+const BD := preload("res://scripts/building_data.gd")
 const Rig := preload("res://scripts/animal_rig.gd")
 const ElkRig := preload("res://scripts/elk_rig.gd")
 const GltfRig := preload("res://scripts/gltf_rig.gd")
@@ -25,6 +26,7 @@ var atk_t := 0.0           # cooldown between attacks on the player
 var rear_t := 0.0          # bear: time left standing on its hind legs before the swipe
 var rear_state := 0        # 0 none, 1 rearing (set by hunt.gd)
 var stuck_t := 0.0         # time spent pushing against the fence
+var story := false         # a wolf of the story: driven by story.gd, not by hunt.gd
 var leave_t := 0.0         # walking away after an attack / giving up on the fence
 var fences: Array = []   # closed enclosures that stop predators: [{"c": Vector3, "h": half-size}] (set by hunt.gd)
 var chasing := false       # currently going for the player
@@ -345,30 +347,83 @@ func _build_deer() -> void:
 	_zone("body", Vector3(0.55, 0.5, 1.15), Vector3(0, 1.0, 0))
 	_zone("legs", Vector3(0.5, 0.7, 0.9), Vector3(0, 0.37, 0))
 
+static var _feather_tex: NoiseTexture2D
+
+func _feather_mat(c: Color) -> StandardMaterial3D:
+	if _feather_tex == null:
+		var n := FastNoiseLite.new()
+		n.frequency = 0.09
+		n.noise_type = FastNoiseLite.TYPE_CELLULAR
+		_feather_tex = NoiseTexture2D.new()
+		_feather_tex.noise = n
+		_feather_tex.width = 128
+		_feather_tex.height = 128
+		_feather_tex.seamless = true
+	var m := StandardMaterial3D.new()
+	m.albedo_color = c
+	m.albedo_texture = _feather_tex
+	m.roughness = 0.95
+	m.rim_enabled = true
+	m.rim = 0.25
+	m.rim_tint = 0.6
+	return m
+
 func _build_chicken() -> void:
 	var big := kind == "turkey"
 	var white := rng.randf() < 0.5
-	var body_m := M.flat(Color(0.93, 0.92, 0.88) if white else Color(0.55, 0.32, 0.17), 0.9)
+	var c: Color
 	if big:
-		body_m = M.flat(Color(0.3, 0.2, 0.13) if white else Color(0.42, 0.28, 0.16), 0.9)
-	var red := M.flat(Color(0.8, 0.1, 0.1), 0.6)
-	var yellow := M.flat(Color(0.95, 0.75, 0.15), 0.6)
-	var dark := M.flat(Color(0.08, 0.07, 0.06), 0.6)
-	_m(self, _sph(0.17), body_m, Vector3(0, 0.3, 0), Vector3.ZERO, Vector3(1, 0.92, 1.3))
-	_m(self, _sph(0.065), body_m, Vector3(0, 0.52, -0.2))
-	_m(self, _bx(0.04, 0.03, 0.06), yellow, Vector3(0, 0.5, -0.28))
-	_m(self, _bx(0.02, 0.06, 0.07), red, Vector3(0, 0.6, -0.2))
-	_m(self, _bx(0.03, 0.04, 0.02), red, Vector3(0, 0.45, -0.25))
-	_m(self, _bx(0.04, 0.2, 0.16), body_m, Vector3(0, 0.4, 0.24), Vector3(0.6, 0, 0))
+		c = Color(0.55, 0.38, 0.24) if white else Color(0.36, 0.25, 0.16)
+	else:
+		c = Color(0.97, 0.95, 0.9) if white else Color(0.7, 0.4, 0.2)
+	var body_m := _feather_mat(c)
+	var wing_m := _feather_mat(c.darkened(0.12))
+	var tail_m := _feather_mat(c.darkened(0.3) if not white else Color(0.55, 0.5, 0.45))
+	var red := M.flat(Color(0.85, 0.08, 0.1), 0.5)
+	var yellow := M.flat(Color(0.95, 0.72, 0.12), 0.5)
+	var dark := M.flat(Color(0.03, 0.03, 0.03), 0.3)
+	_m(self, _sph(0.2), body_m, Vector3(0, 0.34, 0.02), Vector3.ZERO, Vector3(0.9, 0.95, 1.3))      # plump body
+	_m(self, _sph(0.14), body_m, Vector3(0, 0.38, -0.15), Vector3.ZERO, Vector3(0.95, 1.1, 1.0))    # breast
+	_m(self, _caps(0.05, 0.26), body_m, Vector3(0, 0.55, -0.2), Vector3(-0.32, 0, 0))               # neck
+	_m(self, _sph(0.062), body_m, Vector3(0, 0.67, -0.25), Vector3.ZERO, Vector3(0.9, 1.0, 1.15))   # head
+	var beak := CylinderMesh.new()
+	beak.top_radius = 0.0
+	beak.bottom_radius = 0.026
+	beak.height = 0.08
+	beak.radial_segments = 8
+	_m(self, beak, yellow, Vector3(0, 0.655, -0.325), Vector3(-PI / 2.0, 0, 0))
+	for i in 3:                                                                                      # comb
+		_m(self, _sph(0.026 - 0.004 * i), red, Vector3(0, 0.73 - 0.012 * i, -0.28 + 0.035 * i))
+	_m(self, _sph(0.022), red, Vector3(0, 0.6, -0.31), Vector3.ZERO, Vector3(0.8, 1.5, 0.8))       # wattle
 	for sx in [-1.0, 1.0]:
-		_m(self, _bx(0.03, 0.14, 0.22), body_m.duplicate(), Vector3(sx * 0.16, 0.32, 0.0))
-		_m(self, _sph(0.012), dark, Vector3(sx * 0.045, 0.54, -0.235))
-		_leg(self, Vector3(sx * 0.06, 0.2, 0.0), 0.012, 0.2, yellow, yellow)
-	_zone("head", Vector3(0.16, 0.16, 0.18), Vector3(0, 0.54, -0.22))
-	_zone("body", Vector3(0.3, 0.28, 0.42), Vector3(0, 0.32, 0.02))
-	_zone("legs", Vector3(0.2, 0.2, 0.2), Vector3(0, 0.1, 0))
+		_m(self, _sph(0.011), dark, Vector3(sx * 0.045, 0.69, -0.285))                              # eyes
+		_m(self, _sph(0.11), wing_m, Vector3(sx * 0.17, 0.36, 0.04), Vector3(0, 0, sx * 0.2), Vector3(0.28, 0.9, 1.35))   # wings
+		_m(self, _sph(0.075), body_m, Vector3(sx * 0.1, 0.27, 0.06), Vector3.ZERO, Vector3(0.9, 1.2, 1.1))              # thighs
+		_leg(self, Vector3(sx * 0.07, 0.22, 0.02), 0.014, 0.22, yellow, yellow)
+	var fan := 7 if big else 3
+	for i in fan:                                                                                    # tail feathers
+		var t := (float(i) - float(fan - 1) * 0.5) * (0.22 if big else 0.28)
+		_m(self, _caps(0.035, 0.3 if big else 0.26), tail_m, Vector3(t * 0.18, 0.5, 0.3), Vector3(0.75, 0, -t))
+	_zone("head", Vector3(0.16, 0.18, 0.2), Vector3(0, 0.66, -0.25))
+	_zone("body", Vector3(0.34, 0.34, 0.5), Vector3(0, 0.36, 0.0))
+	_zone("legs", Vector3(0.2, 0.22, 0.2), Vector3(0, 0.11, 0))
 	if big:
 		scale = Vector3.ONE * 1.7
+
+## Land animals never walk into the lake: anything inside the water line is pushed back to the shore.
+func _out_of_lake(p: Vector3) -> Vector3:
+	var c: Vector3 = BD.POND_C
+	var off := Vector2(p.x - c.x, p.z - c.z)
+	var r: float = BD.POND_R * 0.9 + 1.0
+	var l := off.length()
+	if l < r:
+		if l < 0.01:
+			off = Vector2(1.0, 0.0)
+			l = 1.0
+		off = off / l * r
+		p.x = c.x + off.x
+		p.z = c.z + off.y
+	return p
 
 func _play(short: String, speed: float = 1.0) -> void:
 	if gl != null:
@@ -439,6 +494,7 @@ func _predator_tick(d: float, ppos: Vector3, world) -> void:
 			leave_t = 14.0
 			stuck_t = 0.0
 			has_target = false
+	p = _out_of_lake(p)
 	if world != null:
 		p.y = world.height_at(p.x, p.z)
 	global_position = p
@@ -560,6 +616,7 @@ func tick(d: float, ppos: Vector3, crouch: bool, world) -> void:
 	var p := global_position + dir * spd * d
 	p.x = clampf(p.x, -68.0, 68.0)
 	p.z = clampf(p.z, -68.0, 68.0)
+	p = _out_of_lake(p)
 	if world != null:
 		p.y = world.height_at(p.x, p.z)
 	if tame and home_r > 0.0:                       # penned animals can never leave their enclosure

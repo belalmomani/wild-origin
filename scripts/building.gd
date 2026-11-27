@@ -55,6 +55,18 @@ func available(i: int) -> bool:
 		return board_done("S0")
 	if id.begins_with("R_"):
 		return GameState.channel          # the rod and dock come after the wooden channel to the lake
+	if id.begins_with("T_"):
+		# the lookout tower: after the fishing dock, and each stage only after the one before it
+		var n := int(id.substr(2))
+		if not board_done("R_dock"):
+			return false
+		return n <= 1 or board_done("T_%d" % (n - 1))
+	if id.begins_with("C_"):
+		# the settlers' cabin opens once the travellers are saved; each stage only after the one before it
+		var cn := int(id.substr(2))
+		if GameState.story_stage < 2:
+			return false
+		return cn <= 1 or board_done("C_%d" % (cn - 1))
 	return true
 
 func current_index() -> int:
@@ -151,7 +163,48 @@ func place(bi: int, pi: int) -> bool:
 	_spawn(p)
 	if remaining(bi) == 0:
 		_update_progress()
+		_stage_done(bi)
 	return true
+
+## Places every missing piece of a board for free (used by the tower's reward ad).
+func complete_board(bi: int) -> void:
+	for p in boards[bi].pieces:
+		if not GameState.placed.has(p.id):
+			GameState.placed[p.id] = true
+			_spawn(p)
+	GameState.xp += 3
+	_update_progress()
+
+## One free piece of the current cabin stage (the travellers' labour). Returns false when nothing is left.
+func place_free(bi: int) -> bool:
+	for p in boards[bi].pieces:
+		if not GameState.placed.has(p.id):
+			GameState.placed[p.id] = true
+			_spawn(p)
+			if remaining(bi) == 0:
+				_update_progress()
+				_stage_done(bi)
+			return true
+	return false
+
+func cabin_done() -> bool:
+	return board_done("C_5")
+
+func tower_done() -> bool:
+	return board_done("T_8")
+
+func _stage_done(bi: int) -> void:
+	var id := str(boards[bi].id)
+	if id.begins_with("T_") and id != "T_8":
+		var n := int(id.substr(2))
+		message.emit("اكتملت مرحلة البرج %d من 8 ✓ التالية: %s" % [n, str(boards[index_of("T_%d" % (n + 1))].name)] + (" — قرب البرج يمكنك مشاهدة إعلان لإنهاء المرحلة فورًا" if n + 1 > 3 else ""))
+	elif id.begins_with("C_") and id != "C_5":
+		var cn := int(id.substr(2))
+		message.emit("اكتملت مرحلة الكوخ %d من 5 ✓ التالية: %s" % [cn, str(boards[index_of("C_%d" % (cn + 1))].name)])
+	elif id == "C_5":
+		message.emit("اكتمل الكوخ! صار للناجين بيت يأوون إليه")
+	elif id == "T_8":
+		message.emit("اكتمل برج المراقبة! يحذّرك من المفترسات القريبة ويوسّع الخريطة")
 
 ## Finished builds raise the difficulty by 1% each (counted from the first time this save was seen).
 func _update_progress() -> void:

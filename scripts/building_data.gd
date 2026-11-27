@@ -10,6 +10,8 @@ const LAMP_POS := Vector3(0, 2.33, 0)
 const POND_C := Vector3(-34, 0, 22)  # the lake, a little way from the house (world.gd carves the basin and flattens the shore)
 const POND_R := 17.0                 # lake radius: a real, wide lake
 const POND_DEPTH := 3.6              # depth at the middle
+const CABIN_C := Vector3(-9, 0, 39)   # settlers' cabin, built together with the rescued travellers
+const TOWER_C := Vector3(-21, 0, 39)  # lookout tower on the lake shore (the ground is flattened there by world.gd)
 const WATER_Y := -0.35               # water surface (the shore is at ground level 0)
 const FARM_C := Vector3(-14, 0, 0)  # fenced farm, west of the house (gate on its east side, facing the house)
 ## Hinged doors / gates. board = puzzle board that builds it, c = centre, out = the side it swings to,
@@ -168,6 +170,8 @@ static func make_boards() -> Array:
 	out.append_array(interior_boards())
 	out.append_array(farm_boards())
 	out.append_array(fishing_boards())
+	out.append_array(tower_boards())
+	out.append_array(cabin_boards())
 	return out
 
 ## Two-leaf gate built as one puzzle board. Each leaf hangs on its own hinge (local x = -half / +half) and swings outwards.
@@ -311,6 +315,129 @@ static func fishing_boards() -> Array:
 		_b(Vector3(0.05, 0.1, 0.05), rc + Vector3(-0.15, 1.0, 0), "stone", {"tint": Color(0.7, 0.72, 0.75)}),   # hook
 	]
 	return [box_board("R_rod", "السنّارة (خشب + حبل + خطّاف)", rod), box_board("R_dock", "رصيف الصيد", dock)]
+
+## The lookout tower beside the lake: eight stages, built in order, mixing stone (foundation, buttresses) and wood.
+static func tower_boards() -> Array:
+	var c := TOWER_C
+	var e := 1.6                                         # half width of the frame
+	var found: Array = []
+	for sx in [-1.0, 1.0]:
+		for sz in [-1.0, 1.0]:
+			found.append(_b(Vector3(0.9, 0.6, 0.9), c + Vector3(sx * e, 0.3, sz * e), "stone"))
+	for sz in [-1.0, 1.0]:
+		found.append(_b(Vector3(3.2, 0.3, 0.4), c + Vector3(0, 0.55, sz * e), "stone"))
+	for sx in [-1.0, 1.0]:
+		found.append(_b(Vector3(0.4, 0.3, 3.2), c + Vector3(sx * e, 0.55, 0), "stone"))
+	found.append(_b(Vector3(3.6, 0.2, 3.6), c + Vector3(0, 0.1, 0), "stone", {"tint": Color(0.55, 0.55, 0.52)}))
+	var posts: Array = []
+	for sx in [-1.0, 1.0]:
+		for sz in [-1.0, 1.0]:
+			posts.append(_b(Vector3(0.32, 6.0, 0.32), c + Vector3(sx * e, 3.65, sz * e)))
+	var beams: Array = []
+	for yy in [2.4, 4.6]:
+		for sz in [-1.0, 1.0]:
+			beams.append(_b(Vector3(3.2, 0.26, 0.26), c + Vector3(0, yy, sz * e)))
+		for sx in [-1.0, 1.0]:
+			beams.append(_b(Vector3(0.26, 0.26, 3.2), c + Vector3(sx * e, yy, 0)))
+	beams.append(_b(Vector3(3.2, 0.2, 0.2), c + Vector3(0, 3.5, -e)))
+	beams.append(_b(Vector3(3.2, 0.2, 0.2), c + Vector3(0, 3.5, e)))
+	var buttress: Array = []
+	for sx in [-1.0, 1.0]:
+		for sz in [-1.0, 1.0]:
+			buttress.append(_b(Vector3(0.7, 1.2, 0.7), c + Vector3(sx * (e + 0.55), 0.6, sz * (e + 0.55)), "stone"))
+	for i in 3:
+		buttress.append(_b(Vector3(1.4, 0.3, 0.7), c + Vector3(0, 0.15 + 0.3 * i, e + 1.2 + 0.0 * i - 0.5 * i), "stone"))
+	var ladder: Array = []
+	for sx in [-1.0, 1.0]:
+		ladder.append(_b(Vector3(0.12, 5.6, 0.12), c + Vector3(sx * 0.5, 3.1, e + 0.2)))
+	for i in 9:
+		ladder.append(_b(Vector3(1.0, 0.1, 0.1), c + Vector3(0, 0.9 + 0.6 * i, e + 0.2)))
+	var deck: Array = []
+	for i in 6:
+		deck.append(_b(Vector3(3.8, 0.14, 0.6), c + Vector3(0, 6.15, -1.5 + 0.6 * i)))
+	for sx in [-1.2, -0.4, 0.4, 1.2]:
+		deck.append(_b(Vector3(0.2, 0.25, 3.6), c + Vector3(sx, 5.9, 0)))
+	var rails: Array = []
+	for sx in [-1.0, 1.0]:
+		for sz in [-1.0, 1.0]:
+			rails.append(_b(Vector3(0.14, 1.0, 0.14), c + Vector3(sx * 1.8, 6.75, sz * 1.8)))
+	for yy in [6.95, 6.5]:
+		for sz in [-1.0, 1.0]:
+			rails.append(_b(Vector3(3.7, 0.1, 0.1), c + Vector3(0, yy, sz * 1.8)))
+		for sx in [-1.0, 1.0]:
+			rails.append(_b(Vector3(0.1, 0.1, 3.7), c + Vector3(sx * 1.8, yy, 0)))
+	var roof: Array = []
+	for sx in [-1.0, 1.0]:
+		for sz in [-1.0, 1.0]:
+			roof.append(_b(Vector3(0.14, 1.5, 0.14), c + Vector3(sx * 1.7, 7.5, sz * 1.7)))
+	roof.append(_b(Vector3(4.6, 0.2, 4.6), c + Vector3(0, 8.35, 0), "wood", {"tint": Color(0.45, 0.28, 0.16)}))
+	roof.append(_b(Vector3(2.8, 0.25, 2.8), c + Vector3(0, 8.6, 0), "wood", {"tint": Color(0.5, 0.31, 0.18)}))
+	roof.append(_b(Vector3(0.07, 2.0, 0.07), c + Vector3(0, 9.7, 0)))
+	roof.append(_b(Vector3(0.9, 0.5, 0.04), c + Vector3(0.5, 10.1, 0), "wood", {"tint": Color(0.8, 0.12, 0.1)}))
+	roof.append(_b(Vector3(0.3, 0.3, 0.3), c + Vector3(0, 7.0, 0), "wood", {"tint": Color(1.0, 0.8, 0.4), "emit": true, "nocol": true}))
+	return [
+		box_board("T_1", "برج المراقبة 1/8: الأساس الحجري", found),
+		box_board("T_2", "برج المراقبة 2/8: الأعمدة الأربعة", posts),
+		box_board("T_3", "برج المراقبة 3/8: عوارض الإطار", beams),
+		box_board("T_4", "برج المراقبة 4/8: حجارة السند والدرج", buttress),
+		box_board("T_5", "برج المراقبة 5/8: السلّم", ladder),
+		box_board("T_6", "برج المراقبة 6/8: منصة المراقبة", deck),
+		box_board("T_7", "برج المراقبة 7/8: سور المنصة", rails),
+		box_board("T_8", "برج المراقبة 8/8: السقف والراية", roof),
+	]
+
+## Settlers' cabin (boards C_1..C_5): stone footing, log walls in two courses, stepped roof, door / window / chimney.
+## The door faces the tower (-x). Built by the player together with the three rescued travellers.
+static func cabin_boards() -> Array:
+	var c := CABIN_C
+	var hx := 3.0
+	var hz := 2.5
+	var found: Array = []
+	found.append(_b(Vector3(6.6, 0.3, 5.6), c + Vector3(0, 0.15, 0), "stone", {"tint": Color(0.5, 0.5, 0.48)}))
+	for sx in [-1.0, 1.0]:
+		for sz in [-1.0, 1.0]:
+			found.append(_b(Vector3(0.7, 0.5, 0.7), c + Vector3(sx * hx, 0.25, sz * hz), "stone"))
+	for sz in [-1.0, 1.0]:
+		found.append(_b(Vector3(2.4, 0.3, 0.5), c + Vector3(-1.4, 0.35, sz * hz), "stone"))
+		found.append(_b(Vector3(2.4, 0.3, 0.5), c + Vector3(1.4, 0.35, sz * hz), "stone"))
+	var low: Array = []
+	var high: Array = []
+	for r in 8:
+		var y := 0.5 + 0.3 * r + 0.15
+		var tgt: Array = low if r < 4 else high
+		var tn := Color(0.56, 0.36, 0.2) if r % 2 == 0 else Color(0.5, 0.32, 0.18)
+		for sz in [-1.0, 1.0]:                                        # long walls (north / south)
+			tgt.append(_b(Vector3(6.0, 0.28, 0.4), c + Vector3(0, y, sz * hz), "wood", {"tint": tn}))
+		if r >= 3 and r <= 5:                                          # window gap in the back wall
+			for sz in [-1.0, 1.0]:
+				tgt.append(_b(Vector3(0.4, 0.28, 1.7), c + Vector3(hx, y, sz * 1.35), "wood", {"tint": tn}))
+		else:
+			tgt.append(_b(Vector3(0.4, 0.28, 5.0), c + Vector3(hx, y, 0), "wood", {"tint": tn}))
+		if r >= 6:                                                      # above the door: a full course
+			tgt.append(_b(Vector3(0.4, 0.28, 5.0), c + Vector3(-hx, y, 0), "wood", {"tint": tn}))
+		else:                                                           # door gap, 1.3 m wide
+			for sz in [-1.0, 1.0]:
+				tgt.append(_b(Vector3(0.4, 0.28, 1.85), c + Vector3(-hx, y, sz * 1.575), "wood", {"tint": tn}))
+	var roof: Array = []
+	var dims := [Vector2(7.2, 6.2), Vector2(6.2, 5.0), Vector2(5.0, 3.8), Vector2(3.8, 2.6), Vector2(2.6, 1.4)]
+	for i in dims.size():
+		roof.append(_b(Vector3(dims[i].x, 0.28, dims[i].y), c + Vector3(0, 2.95 + 0.28 * i, 0), "wood", {"tint": Color(0.42, 0.26, 0.15).lightened(0.04 * i)}))
+	var trim: Array = []
+	trim.append(_b(Vector3(0.2, 0.2, 1.5), c + Vector3(-hx - 0.1, 1.75, 0), "wood", {"tint": Color(0.4, 0.25, 0.14)}))   # lintel
+	for sz in [-1.0, 1.0]:
+		trim.append(_b(Vector3(0.2, 1.4, 0.16), c + Vector3(-hx - 0.1, 1.2, sz * 0.72), "wood", {"tint": Color(0.4, 0.25, 0.14)}))
+	trim.append(_b(Vector3(0.1, 1.4, 0.7), c + Vector3(-hx - 0.4, 1.2, 0.95), "wood", {"tint": Color(0.6, 0.4, 0.22)}))     # door leaf, open
+	trim.append(_b(Vector3(0.14, 0.9, 1.5), c + Vector3(hx, 1.55, 0), "wood", {"tint": Color(0.7, 0.85, 0.95), "nocol": true}))  # window glass
+	trim.append(_b(Vector3(1.0, 3.6, 1.0), c + Vector3(1.2, 3.6, -1.4), "stone", {"tint": Color(0.5, 0.42, 0.38)}))          # chimney
+	trim.append(_b(Vector3(1.4, 0.25, 1.4), c + Vector3(1.2, 5.5, -1.4), "stone"))
+	trim.append(_b(Vector3(0.8, 0.5, 0.8), c + Vector3(-hx - 1.3, 0.25, 0), "stone"))                                        # doorstep
+	return [
+		box_board("C_1", "الكوخ 1/5: الأساس الحجري", found),
+		box_board("C_2", "الكوخ 2/5: جذوع الجدران السفلى", low),
+		box_board("C_3", "الكوخ 3/5: جذوع الجدران العليا", high),
+		box_board("C_4", "الكوخ 4/5: السقف", roof),
+		box_board("C_5", "الكوخ 5/5: الباب والنافذة والمدخنة", trim),
+	]
 
 static func interior_boards() -> Array:
 	var out: Array = []

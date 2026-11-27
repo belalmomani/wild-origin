@@ -167,3 +167,42 @@ def hand(d):  # interact: open hand
     d.polygon([(150, 330), (80, 280), (100, 240), (170, 290)], fill=W)
 glyph("hand", hand)
 print("icons ->", OUT)
+
+# --- coin
+im, d = new()
+ell(d, (40, 40, 472, 472), (250, 195, 40), (160, 105, 10), 16)
+ell(d, (95, 95, 417, 417), (255, 218, 80), (200, 140, 20), 10)
+d.polygon([(256, 140), (292, 226), (384, 232), (312, 290), (336, 380), (256, 330), (176, 380), (200, 290), (128, 232), (220, 226)], fill=(235, 165, 20))
+d.ellipse((130, 100, 290, 170), fill=(255, 236, 140))
+save(im, "coin")
+
+# --- pause glyph
+def pause(d):
+    d.rounded_rectangle((130, 90, 215, 422), 26, fill=W)
+    d.rounded_rectangle((297, 90, 382, 422), 26, fill=W)
+glyph("pause", pause)
+
+# --- player avatar (round, gold ring): boy with a blue cap
+im, d = new()
+ell(d, (20, 20, 492, 492), (120, 190, 235), (240, 190, 60), 22)
+mask = Image.new("L", (S, S), 0)
+ImageDraw.Draw(mask).ellipse((34, 34, 478, 478), fill=255)
+inner = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+di = ImageDraw.Draw(inner)
+di.rectangle((0, 0, S, S), fill=(135, 200, 240))
+di.ellipse((-60, 380, 570, 700), fill=(70, 120, 70))          # shirt
+di.rectangle((215, 330, 297, 420), fill=(235, 185, 140))        # neck
+di.ellipse((130, 130, 382, 400), fill=(245, 200, 155))          # face
+di.ellipse((120, 230, 160, 300), fill=(235, 185, 140)); di.ellipse((352, 230, 392, 300), fill=(235, 185, 140))
+di.pieslice((110, 60, 402, 330), 180, 360, fill=(40, 80, 170))  # cap
+di.rounded_rectangle((100, 190, 412, 225), 16, fill=(30, 60, 140))
+di.polygon([(150, 215), (380, 215), (430, 250), (170, 250)], fill=(25, 50, 120))
+for ex in (205, 307):
+    di.ellipse((ex - 22, 270, ex + 22, 320), fill=(255, 255, 255)); di.ellipse((ex - 11, 282, ex + 11, 312), fill=(40, 30, 20))
+di.arc((200, 310, 312, 380), 20, 160, fill=(150, 70, 60), width=10)
+di.line((215, 258, 200, 250), fill=(70, 45, 25), width=8)
+inner.putalpha(mask)
+im.alpha_composite(inner)
+d = ImageDraw.Draw(im)
+d.ellipse((20, 20, 492, 492), outline=(240, 190, 60), width=22)
+save(im, "avatar")

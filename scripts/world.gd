@@ -21,6 +21,12 @@ func height_at(x: float, z: float) -> float:
 	if ld < D.POND_R + 10.0:                   # lake: flat shore around it, a deep basin carved into the ground
 		h = lerpf(h, 0.0, 1.0 - smoothstep(D.POND_R + 1.0, D.POND_R + 10.0, ld))
 		h -= D.POND_DEPTH * (1.0 - smoothstep(D.POND_R * 0.35, D.POND_R + 1.0, ld))
+	var td := Vector2(x - D.TOWER_C.x, z - D.TOWER_C.z).length()
+	if td < 13.0:                              # level ground for the lookout tower
+		h = lerpf(h, 0.0, 1.0 - smoothstep(6.5, 13.0, td))
+	var cd := Vector2(x - D.CABIN_C.x, z - D.CABIN_C.z).length()
+	if cd < 11.0:                              # level ground for the settlers' cabin
+		h = lerpf(h, 0.0, 1.0 - smoothstep(5.5, 11.0, cd))
 	return h
 
 func build(removed: Dictionary) -> void:
@@ -142,7 +148,7 @@ func _rock(pos: Vector3, id: int, sc: float, yaw: float) -> void:
 
 ## True if the ground point (x, z) is on the lake or its shore margin (no trees / rocks / grass there).
 func _in_lake(p: Vector2, margin: float) -> bool:
-	return Vector2(p.x - D.POND_C.x, p.y - D.POND_C.z).length() < D.POND_R + margin
+	return Vector2(p.x - D.POND_C.x, p.y - D.POND_C.z).length() < D.POND_R + margin or Vector2(p.x - D.TOWER_C.x, p.y - D.TOWER_C.z).length() < 7.5 or Vector2(p.x - D.CABIN_C.x, p.y - D.CABIN_C.z).length() < 8.0
 
 ## Pines and boulders framing the lake, reeds and wild flowers along its shore (the side facing the house stays open).
 func _lake_shore(removed: Dictionary) -> void:
@@ -160,7 +166,7 @@ func _lake_shore(removed: Dictionary) -> void:
 			continue
 		var x := c.x + cos(a) * r
 		var z := c.y + sin(a) * r
-		if Vector2(x, z).length() < 22.0 or absf(x) > 66.0 or absf(z) > 66.0:
+		if Vector2(x, z).length() < 22.0 or absf(x) > 66.0 or absf(z) > 66.0 or _in_lake(Vector2(x, z), 0.0):
 			continue
 		_tree(Vector3(x, height_at(x, z), z), id, rng.randf_range(0.9, 1.5), rng.randf() * TAU)
 		n += 1

@@ -42,6 +42,9 @@ var bucket := 0                # water charges in the bucket
 var pond := 0.0                # lake water level 0..1
 var channel := false           # the wooden channel well -> lake is built
 var harvests := 0              # crops harvested (rewards the well upgrade)
+var story_stage := 0           # 0 nothing, 1 travellers hunted by wolves, 2 saved (cabin opens), 3 cabin finished
+var story_alive := [true, true, true]
+var story_clock := -1.0        # game hour when the last attempt failed (retry after two days)
 var coat := false              # coat sewn from bear / wolf pelts: +2 lives
 var sens_idx := 1              # camera sensitivity: 0 low, 1 normal, 2 high
 var fire_fuel := 0.0           # game hours of fire left in the hearth
@@ -77,6 +80,9 @@ func reset() -> void:
 	bucket = 0
 	harvests = 0
 	coat = false
+	story_stage = 0
+	story_alive = [true, true, true]
+	story_clock = -1.0
 	pond = 0.0
 	channel = false
 	pen = []
@@ -149,7 +155,7 @@ func to_dict() -> Dictionary:
 	return {"v": 1, "inv": inv, "placed": placed.keys(), "removed": removed.keys(),
 		"pos": [player_pos.x, player_pos.y, player_pos.z], "t": time_of_day,
 		"hints": hints_left, "phase": phase, "xp": xp, "torch": torch_owned,
-		"clock": clock_hours, "weapons": weapons, "widx": weapon_idx, "livestock": livestock, "animals": animals, "pen": pen, "techs": techs, "npid": next_pen_id, "barn_u": barn_unlocked, "fuel": fire_fuel, "dbase": diff_base, "cacc": cost_acc, "hinit": hearth_init, "drag": drag_kind, "crops": crops, "ncid": next_crop_id, "lives": lives, "hstage": hunt_stage, "stn": stage_n, "well": well, "bucket": bucket, "harv": harvests, "pond": pond, "channel": channel, "coat": coat, "saved": Time.get_unix_time_from_system()}
+		"clock": clock_hours, "weapons": weapons, "widx": weapon_idx, "livestock": livestock, "animals": animals, "pen": pen, "techs": techs, "npid": next_pen_id, "barn_u": barn_unlocked, "fuel": fire_fuel, "dbase": diff_base, "cacc": cost_acc, "hinit": hearth_init, "drag": drag_kind, "crops": crops, "ncid": next_crop_id, "lives": lives, "hstage": hunt_stage, "stn": stage_n, "well": well, "bucket": bucket, "harv": harvests, "pond": pond, "channel": channel, "coat": coat, "sst": story_stage, "salive": story_alive, "sclk": story_clock, "saved": Time.get_unix_time_from_system()}
 
 func from_dict(d: Dictionary) -> void:
 	reset()
@@ -194,6 +200,14 @@ func from_dict(d: Dictionary) -> void:
 	bucket = int(d.get("bucket", 0))
 	harvests = int(d.get("harv", 0))
 	coat = bool(d.get("coat", false))
+	story_stage = int(d.get("sst", 0))
+	if story_stage == 1:
+		story_stage = 0                       # an interrupted rescue starts again
+	var sa: Array = d.get("salive", [true, true, true])
+	story_alive = [true, true, true]
+	for i in mini(3, sa.size()):
+		story_alive[i] = bool(sa[i])
+	story_clock = float(d.get("sclk", -1.0))
 	pond = clampf(float(d.get("pond", 0.0)), 0.0, 1.0)
 	channel = bool(d.get("channel", false))
 	clock_hours = float(d.get("clock", 8.0))

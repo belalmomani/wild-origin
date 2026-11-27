@@ -4,7 +4,7 @@ func _init() -> void:
 	var fails := 0
 	var D = load("res://scripts/building_data.gd")
 	var boards: Array = D.make_boards()
-	if boards.size() != 31:
+	if boards.size() != 44:
 		print("FAIL boards: ", boards.size()); fails += 1
 	if boards[2].pieces.size() != 50:
 		print("FAIL back facade should have 50 pieces: ", boards[2].pieces.size()); fails += 1
@@ -373,4 +373,46 @@ func _init() -> void:
 	var BDx = load("res://scripts/building_data.gd")
 	if BDx.POND_R < 15.0 or BDx.POND_DEPTH < 3.0:
 		print("FAIL lake must be big and deep"); fails += 1
+	# phase 8.3: lookout tower (8 ordered stages, mixed stone / wood, around 70 pieces)
+	var tb: Array = BDx.tower_boards()
+	var tcount := 0
+	var tstone := 0
+	if tb.size() != 8:
+		print("FAIL tower must have 8 stages"); fails += 1
+	for tbd in tb:
+		tcount += (tbd["pieces"] as Array).size()
+		if (tbd["pieces"] as Array).size() < 4:
+			print("FAIL tower stage too small ", tbd["id"]); fails += 1
+		for tp in tbd["pieces"]:
+			if tp["cost"] == "stone":
+				tstone += 1
+			var tc: Vector3 = (tp["xf"] as Transform3D).origin
+			if Vector2(tc.x - BDx.TOWER_C.x, tc.z - BDx.TOWER_C.z).length() > 6.0:
+				print("FAIL tower piece far from the tower ", tp["id"]); fails += 1
+	if tcount < 60 or tstone < 15 or tstone > tcount - 30:
+		print("FAIL tower size / stone-wood mix ", tcount, " ", tstone); fails += 1
+	# phase 9: story + settlers' cabin
+	var cb: Array = BDx.cabin_boards()
+	var ccount := 0
+	if cb.size() != 5:
+		print("FAIL cabin must have 5 stages"); fails += 1
+	for cbd in cb:
+		ccount += (cbd["pieces"] as Array).size()
+		for cp in cbd["pieces"]:
+			var cc: Vector3 = (cp["xf"] as Transform3D).origin
+			if Vector2(cc.x - BDx.CABIN_C.x, cc.z - BDx.CABIN_C.z).length() > 7.0:
+				print("FAIL cabin piece far from the cabin ", cp["id"]); fails += 1
+	if ccount < 70:
+		print("FAIL cabin too small ", ccount); fails += 1
+	if Vector2(BDx.CABIN_C.x - BDx.POND_C.x, BDx.CABIN_C.z - BDx.POND_C.z).length() < BDx.POND_R + 8.0:
+		print("FAIL cabin too close to the lake"); fails += 1
+	if Vector2(BDx.CABIN_C.x, BDx.CABIN_C.z).length() < 30.0:
+		print("FAIL cabin inside the safe yard"); fails += 1
+	var gss = load("res://scripts/game_state.gd").new()
+	gss.story_stage = 2
+	gss.story_alive = [true, false, true]
+	var npcs_ok: bool = load("res://scripts/npc.gd") != null and load("res://scripts/story.gd") != null
+	if not npcs_ok:
+		print("FAIL story scripts do not load"); fails += 1
+	gss.free()
 	quit(1 if fails > 0 else 0)

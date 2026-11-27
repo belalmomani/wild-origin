@@ -47,13 +47,20 @@ var quest_bg: Panel
 var _res_lines := 1
 
 const GOLD := Color(0.96, 0.78, 0.28)
-const CIRCLE_BTNS := ["interact", "fire", "jump", "crouch", "aim", "scope", "build", "more"]
+const CIRCLE_BTNS := ["pause", "interact", "fire", "jump", "crouch", "aim", "scope", "build", "more"]
 const ICON_PATH := "res://assets/ui/icons/"
-const ICON_BTNS := {"jump": "jump", "crouch": "crouch", "aim": "aim", "build": "build", "scope": "scope", "more": "menu", "fire": "fire", "interact": "hand"}
+const ICON_BTNS := {"pause": "pause", "jump": "jump", "crouch": "crouch", "aim": "aim", "build": "build", "scope": "scope", "more": "menu", "fire": "fire", "interact": "hand"}
 const DRAWER := ["torch", "plant", "water", "tech", "save", "home", "weapon", "coat"]
-const STAT_KEYS := ["time", "wood", "stone", "apples", "meat", "fish", "pelt", "level"]
-const STAT_ICONS := {"time": "clock", "wood": "wood", "stone": "stone", "apples": "apple", "meat": "meat", "fish": "fish", "pelt": "pelt", "level": "star"}
+const STAT_KEYS := ["time", "xp", "apples", "wood", "stone", "meat", "fish", "pelt", "level"]
+const STAT_MAIN := 4           # the first four sit in the big top bar (like the reference), the rest in a small row under it
+const STAT_ICONS := {"time": "clock", "xp": "coin", "wood": "wood", "stone": "stone", "apples": "apple", "meat": "meat", "fish": "fish", "pelt": "pelt", "level": "star"}
 var pill: Panel
+var pill2: Panel
+var avatar: TextureRect
+var quest_title: Label
+var quest_prog: Label
+var quest_badge: Panel
+var minimap
 var stat_ic := {}
 var stat_lb := {}
 var stat_on := {}
@@ -96,6 +103,7 @@ func _ready() -> void:
 		lb.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 		stat_lb[k] = lb
 		stat_on[k] = true
+	pill2 = _card(Color(0.04, 0.07, 0.07, 0.6))
 	life_bg = _card(Color(0.04, 0.07, 0.07, 0.72))
 	life_heart = TextureRect.new()
 	life_heart.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
@@ -114,6 +122,15 @@ func _ready() -> void:
 	add_child(life_fill)
 	life_lb = _label(24)
 	life_lb.text_direction = Control.TEXT_DIRECTION_LTR
+	avatar = TextureRect.new()
+	avatar.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	avatar.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	avatar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	if ResourceLoader.exists(ICON_PATH + "avatar.png"):
+		avatar.texture = load(ICON_PATH + "avatar.png")
+	add_child(avatar)
+	minimap = load("res://scripts/minimap.gd").new()
+	add_child(minimap)
 	drawer_bg = _card(Color(0.04, 0.07, 0.07, 0.85))
 	drawer_bg.visible = false
 	res_bg = _card(Color(0.05, 0.08, 0.07, 0.62))
@@ -122,7 +139,24 @@ func _ready() -> void:
 	title_label.text = "WILD ORIGIN\nبداية العالم"
 	res_label = _label(21)
 	quest_label = _label(24)
-	quest_label.add_theme_color_override("font_color", Color(1.0, 0.92, 0.6))
+	quest_label.add_theme_color_override("font_color", Color(0.95, 0.95, 0.9))
+	quest_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	quest_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	quest_title = _label(27)
+	quest_title.add_theme_color_override("font_color", Color(1.0, 0.82, 0.25))
+	quest_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	quest_prog = _label(26)
+	quest_prog.add_theme_color_override("font_color", Color(1.0, 0.82, 0.25))
+	quest_prog.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	quest_badge = Panel.new()
+	quest_badge.add_theme_stylebox_override("panel", _sbox(Color(0.98, 0.78, 0.15), Color(1, 0.95, 0.7), 40, 3))
+	quest_badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(quest_badge)
+	var bl := _label(36)
+	bl.text = "!"
+	bl.name = "BadgeMark"
+	bl.add_theme_color_override("font_color", Color(0.35, 0.2, 0.02))
+	bl.add_theme_constant_override("outline_size", 0)
 	toast_label = _label(30)
 	puzzle_info = _label(28)
 	crop_label = _label(24)
@@ -175,8 +209,13 @@ func _ready() -> void:
 	add_child(fade_rect)
 	stick_base = _circle(190, Color(1, 1, 1, 0.14), Color(1, 1, 1, 0.55), 4)
 	stick_knob = _circle(84, Color(1, 1, 1, 0.5), Color(1, 1, 1, 0.9), 3)
+	for ap in [[Vector2(95, 16), Vector2(80, 38), Vector2(110, 38)], [Vector2(95, 174), Vector2(80, 152), Vector2(110, 152)], [Vector2(16, 95), Vector2(38, 80), Vector2(38, 110)], [Vector2(174, 95), Vector2(152, 80), Vector2(152, 110)]]:
+		var pg := Polygon2D.new()
+		pg.polygon = PackedVector2Array(ap)
+		pg.color = Color(1, 1, 1, 0.7)
+		stick_base.add_child(pg)
 	for n in [["new", "لعبة جديدة", "menu"], ["continue", "متابعة اللعبة", "menu"], ["quality", "الجودة", "menu"], ["sound", "الصوت", "menu"], ["day", "مدة اليوم", "menu"], ["gentle", "تخفيف المشاهد", "menu"], ["sens", "الحساسية", "menu"],
-			["more", "", "hud"], ["coat", "معطف", "hud"], ["jump", "قفز", "hud"], ["interact", "تفاعل", "hud"], ["build", "بناء", "hud"], ["torch", "مشعل", "hud"], ["crouch", "انحناء", "hud"], ["plant", "زرع", "hud"], ["water", "سقي", "hud"], ["tech", "تقنيات", "hud"], ["tresearch", "تطوير", "tech"], ["tclose", "إغلاق", "tech"], ["tup", "▲", "tech"], ["tdown", "▼", "tech"], ["aim", "تصويب", "hud"], ["weapon", "سلاح", "hud"], ["speed", "تسريع", "special"], ["scope", "عدسة", "special"], ["fire", "إطلاق", "special"], ["save", "حفظ", "hud"], ["home", "🏠 المنزل", "hud"],
+			["pause", "", "hud"], ["more", "", "hud"], ["coat", "معطف", "hud"], ["jump", "قفز", "hud"], ["interact", "تفاعل", "hud"], ["build", "بناء", "hud"], ["torch", "مشعل", "hud"], ["crouch", "انحناء", "hud"], ["plant", "زرع", "hud"], ["water", "سقي", "hud"], ["tech", "تقنيات", "hud"], ["tresearch", "تطوير", "tech"], ["tclose", "إغلاق", "tech"], ["tup", "▲", "tech"], ["tdown", "▼", "tech"], ["aim", "تصويب", "hud"], ["weapon", "سلاح", "hud"], ["speed", "تسريع", "special"], ["scope", "عدسة", "special"], ["fire", "إطلاق", "special"], ["save", "حفظ", "hud"], ["home", "🏠 المنزل", "hud"],
 			["hint", "تلميح", "puzzle"], ["pnext", "لوحة أخرى ▸", "puzzle"], ["pclose", "إغلاق", "puzzle"], ["pleft", "◀", "puzzle"], ["pright", "▶", "puzzle"]]:
 		_btn(n[0], n[1], n[2])
 	get_viewport().size_changed.connect(_layout)
@@ -357,10 +396,11 @@ func _layout() -> void:
 	_circ("build", w - 330 * k, h - 255 * k, 58 * k)
 	_circ("fire", w - 330 * k, h - 255 * k, 82 * k)
 	_circ("scope", w - 120 * k, h - 500 * k, 56 * k)
-	_circ("more", w - 72 * k, 66 * k, 46 * k)
-	_put("speed", Vector2(20, 96 * k), Vector2(170, 64))
-	var dx := w - 420 * k
-	var dy := 130 * k
+	_circ("pause", w - 62 * k, 58 * k, 42 * k)
+	_circ("more", w - 62 * k, 160 * k, 38 * k)
+	_put("speed", Vector2(20, 520 * k), Vector2(170, 64))
+	var dx := w - 440 * k
+	var dy := 215 * k
 	var order := ["torch", "plant", "water", "tech", "save", "home", "weapon", "coat"]
 	for i in order.size():
 		_put(order[i], Vector2(dx + float(i % 2) * 200.0 * k, dy + float(i / 2) * 90.0 * k), Vector2(190.0 * k, 80.0 * k))
@@ -386,69 +426,133 @@ func _place_hud() -> void:
 	var vp := get_viewport().get_visible_rect().size
 	var k := clampf(vp.y / 1080.0, 0.55, 1.25)
 	var show := not in_menu and not in_puzzle and not in_tech
-	# top pill: icon + number pairs (time, wood, stone, apples, meat, fish, pelts, level)
-	var total := 28.0 * k
-	for key in STAT_KEYS:
-		if stat_on[key]:
-			total += (200.0 if key == "time" else 138.0) * k
-	var px := maxf(360.0 * k, (vp.x - total) * 0.5)
-	var ph := 70.0 * k
+	# --- top bar: clock | coin | apple | wood (like the reference), a smaller row under it for the rest
+	var main_keys: Array = STAT_KEYS.slice(0, STAT_MAIN)
+	var sub_keys: Array = STAT_KEYS.slice(STAT_MAIN)
+	var ph := 72.0 * k
+	var total := 30.0 * k
+	for key in main_keys:
+		total += (205.0 if key == "time" else 150.0) * k
+	var px := maxf(430.0 * k, (vp.x - total) * 0.5)
 	pill.position = Vector2(px, 8)
 	pill.size = Vector2(total, ph)
-	var sx := px + 14.0 * k
-	for key in STAT_KEYS:
-		var on: bool = stat_on[key]
-		stat_ic[key].visible = show and on
-		stat_lb[key].visible = show and on
-		if not on:
-			continue
-		var sw := (200.0 if key == "time" else 138.0) * k
-		stat_ic[key].position = Vector2(sx, 8 + ph * 0.5 - 24.0 * k)
-		stat_ic[key].size = Vector2(48.0 * k, 48.0 * k)
-		stat_lb[key].position = Vector2(sx + 54.0 * k, 8 + ph * 0.5 - 22.0 * k)
-		stat_lb[key].size = Vector2(sw - 58.0 * k, 44.0 * k)
-		sx += sw
 	pill.visible = show
-	# lives (top-left)
-	life_bg.position = Vector2(16, 8)
-	life_bg.size = Vector2(330.0 * k, ph)
-	life_heart.position = Vector2(26, 8 + ph * 0.5 - 24.0 * k)
-	life_heart.size = Vector2(48.0 * k, 48.0 * k)
-	var bx := 84.0 * k
-	var bw := 236.0 * k
+	var sx := px + 15.0 * k
+	for key in main_keys:
+		var sw := (205.0 if key == "time" else 150.0) * k
+		_place_stat(key, sx, 8.0, sw, ph, k, 1.0, show)
+		sx += sw
+	var k2 := 0.68
+	var ph2 := 56.0 * k
+	var total2 := 24.0 * k
+	for key in sub_keys:
+		if stat_on[key]:
+			total2 += 118.0 * k
+	var vis2 := false
+	var sx2 := px + (total - total2) * 0.5 + 12.0 * k
+	for key in sub_keys:
+		if stat_on[key]:
+			vis2 = true
+			_place_stat(key, sx2, 8.0 + ph + 6.0, 118.0 * k, ph2, k, k2, show)
+			sx2 += 118.0 * k
+		else:
+			_place_stat(key, 0.0, 0.0, 0.0, 0.0, k, k2, false)
+	pill2.position = Vector2(px + (total - total2) * 0.5, 8.0 + ph + 6.0)
+	pill2.size = Vector2(total2, ph2)
+	pill2.visible = show and vis2
+	# --- avatar + lives bar (top-left)
+	life_bg.position = Vector2(60.0 * k, 28.0 * k)
+	life_bg.size = Vector2(300.0 * k, 58.0 * k)
+	avatar.position = Vector2(10, 6)
+	avatar.size = Vector2(104.0 * k, 104.0 * k)
+	life_heart.position = Vector2(124.0 * k, 33.0 * k)
+	life_heart.size = Vector2(46.0 * k, 46.0 * k)
+	var bx := 176.0 * k
+	var bw := 172.0 * k
 	var back := get_node_or_null("LifeBack") as Panel
 	if back != null:
-		back.position = Vector2(bx, 8 + ph * 0.5 - 13.0 * k)
+		back.position = Vector2(bx, 44.0 * k)
 		back.size = Vector2(bw, 26.0 * k)
 		back.visible = show
-	life_fill.position = back.position + Vector2(3, 3)
+		life_fill.position = back.position + Vector2(3, 3)
 	life_fill.size = Vector2(maxf(0.0, (bw - 6.0) * _life_ratio), 20.0 * k)
 	life_fill.add_theme_stylebox_override("panel", _sbox(Color(0.85, 0.2, 0.15).lerp(Color(0.3, 0.8, 0.2), _life_ratio), Color(0, 0, 0, 0), 9, 0))
 	life_fill.visible = show and _life_ratio > 0.01
-	life_lb.position = Vector2(bx, 8 + ph * 0.5 - 13.0 * k)
+	life_lb.position = Vector2(bx, 44.0 * k)
 	life_lb.size = Vector2(bw, 26.0 * k)
+	life_lb.add_theme_font_size_override("font_size", int(20.0 * k))
 	life_bg.visible = show
+	avatar.visible = show
 	life_heart.visible = show
 	life_lb.visible = show
-	# extra info + quest cards under the pill
-	var w := minf(vp.x * 0.62, 1180.0)
+	# --- quest card (left, under the avatar): badge, gold title, text, progress
+	var qx := 14.0
+	var qy := 122.0 * k
+	var qw := 340.0 * k
+	var qh := 150.0 * k
+	quest_bg.position = Vector2(qx, qy)
+	quest_bg.size = Vector2(qw, qh)
+	quest_badge.position = Vector2(qx + 14.0 * k, qy + 14.0 * k)
+	quest_badge.size = Vector2(54.0 * k, 54.0 * k)
+	var mark := get_node_or_null("BadgeMark") as Label
+	if mark != null:
+		mark.position = quest_badge.position
+		mark.size = quest_badge.size
+		mark.visible = show and quest_label.text != ""
+	quest_title.position = Vector2(qx + 76.0 * k, qy + 16.0 * k)
+	quest_title.size = Vector2(qw - 90.0 * k, 40.0 * k)
+	quest_label.position = Vector2(qx + 12.0 * k, qy + 62.0 * k)
+	quest_label.size = Vector2(qw - 26.0 * k, 50.0 * k)
+	quest_prog.position = Vector2(qx + 12.0 * k, qy + qh - 44.0 * k)
+	quest_prog.size = Vector2(qw - 26.0 * k, 34.0 * k)
+	var has_q := show and quest_label.text != ""
+	quest_bg.visible = has_q
+	quest_badge.visible = has_q
+	quest_title.visible = has_q
+	quest_label.visible = has_q
+	quest_prog.visible = has_q and quest_prog.text != ""
+	# --- info line + crop / hunt hints under the top bar
+	var w := minf(vp.x * 0.5, 980.0)
 	var x := (vp.x - w) * 0.5
-	var ry := 8.0 + ph + 8.0
-	var rh := 14.0 + 28.0 * float(_res_lines)
+	var ry := 8.0 + ph + (6.0 + ph2 + 6.0 if vis2 else 8.0)
+	var rh := 12.0 + 26.0 * float(_res_lines)
 	res_bg.position = Vector2(x, ry)
 	res_bg.size = Vector2(w, rh)
-	res_label.position = Vector2(0, ry + 8.0)
+	res_label.position = Vector2(0, ry + 6.0)
 	res_label.size = Vector2(vp.x, rh)
-	var qy := ry + rh + 6.0
-	quest_bg.position = Vector2(x, qy)
-	quest_bg.size = Vector2(w, 54)
-	quest_label.position = Vector2(0, qy + 10.0)
-	quest_label.size = Vector2(vp.x, 40)
-	crop_label.position = Vector2(0, qy + 62.0)
-	hunt_label.position = Vector2(0, qy + 132.0)
 	res_bg.visible = show and res_label.text != ""
-	quest_bg.visible = show and quest_label.text != ""
+	res_label.visible = show and res_label.text != ""
+	crop_label.position = Vector2(0, ry + rh + 8.0)
+	hunt_label.position = Vector2(0, ry + rh + 78.0)
+	crop_label.visible = show
+	hunt_label.visible = show
 	drawer_bg.visible = show and drawer_open
+	# --- mini-map (top-right, left of the pause button)
+	var ms := 176.0 * k
+	minimap.position = Vector2(vp.x - 62.0 * k - 42.0 * k - 14.0 * k - ms, 10)
+	minimap.size = Vector2(ms, ms)
+	minimap.visible = show
+	# --- static joystick (bottom-left) while idle
+	if stick_id == -1:
+		stick_center = Vector2(190.0 * k, vp.y - 200.0 * k)
+		stick_base.position = stick_center - stick_base.size * 0.5
+		stick_knob.position = stick_center - stick_knob.size * 0.5
+		stick_base.modulate.a = 0.75
+		stick_base.visible = show
+		stick_knob.visible = show
+
+func _place_stat(key: String, x: float, y: float, sw: float, h: float, k: float, sc: float, vis: bool) -> void:
+	var on: bool = stat_on[key] and vis
+	stat_ic[key].visible = on
+	stat_lb[key].visible = on
+	if not on:
+		return
+	var isz := 48.0 * k * sc
+	stat_ic[key].position = Vector2(x, y + h * 0.5 - isz * 0.5)
+	stat_ic[key].size = Vector2(isz, isz)
+	stat_lb[key].add_theme_font_size_override("font_size", int(32.0 * k * sc))
+	stat_lb[key].position = Vector2(x + isz + 8.0 * k * sc, y + h * 0.5 - 22.0 * k * sc)
+	stat_lb[key].size = Vector2(sw - isz - 12.0 * k * sc, 44.0 * k * sc)
 
 func show_menu(has_save: bool) -> void:
 	in_menu = true
@@ -494,8 +598,6 @@ func _set_mode() -> void:
 	for b in puzzle_btns:
 		b.visible = in_puzzle
 	puzzle_info.visible = in_puzzle
-	for l in [res_label, quest_label, crop_label, hunt_label]:
-		l.visible = not in_menu and not in_puzzle and not in_tech
 	_place_hud()
 	vignette.visible = not in_menu and not in_puzzle and not in_tech and GameState.quality >= 1
 	if in_menu or in_puzzle or in_tech:
@@ -560,9 +662,12 @@ func set_day_text(secs: float) -> void:
 func set_crop(text: String) -> void:
 	crop_label.text = text
 
-func set_hud(res: String, quest: String) -> void:
+func set_hud(res: String, quest: String, progress: String = "") -> void:
 	res_label.text = res
-	quest_label.text = quest
+	var parts := quest.split(" — ", true, 1)
+	quest_title.text = parts[0] if parts.size() > 1 else "المهمة"
+	quest_label.text = parts[1] if parts.size() > 1 else quest
+	quest_prog.text = progress
 	var lines := res.count("\n") + 1
 	if lines != _res_lines:
 		_res_lines = lines
@@ -641,6 +746,7 @@ func _press(idx: int, pos: Vector2) -> void:
 		stick_id = idx
 		stick_center = pos
 		stick_base.position = pos - stick_base.size / 2.0
+		stick_base.modulate.a = 1.0
 		stick_base.visible = true
 		stick_knob.visible = true
 		_stick(pos)
@@ -654,8 +760,7 @@ func _release(idx: int, pos: Vector2) -> void:
 	elif idx == stick_id:
 		stick_id = -1
 		GameState.move = Vector2.ZERO
-		stick_base.visible = false
-		stick_knob.visible = false
+		_place_hud()
 	elif idx == cam_id:
 		cam_id = -1
 

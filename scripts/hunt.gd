@@ -571,7 +571,7 @@ func _pred_manage() -> void:
 	var night := GameState.is_night()
 	var cnt := {"bear": 0, "wolf": 0, "fox": 0}
 	for a in animals:
-		if is_instance_valid(a) and a.predator and not a.dead:
+		if is_instance_valid(a) and a.predator and not a.dead and not a.story:
 			cnt[a.kind] = int(cnt[a.kind]) + 1
 			if (a.kind != "bear") and not night:
 				a.leave_t = 30.0                     # night hunters go back to the forest at dawn
@@ -614,7 +614,7 @@ func _spawn_pred(kind: String) -> void:
 ## Removes predators close to the house (used when the player is carried home after being downed).
 func clear_near_predators() -> void:
 	for a in animals.duplicate():
-		if is_instance_valid(a) and a.predator and not a.dead and Vector2(a.global_position.x, a.global_position.z).length() < 45.0:
+		if is_instance_valid(a) and a.predator and not a.dead and not a.story and Vector2(a.global_position.x, a.global_position.z).length() < 45.0:
 			animals.erase(a)
 			a.queue_free()
 
@@ -627,6 +627,8 @@ func _pred_frame(d: float) -> void:
 		if not is_instance_valid(a) or not a.predator or a.dead:
 			continue
 		a.fences = fc
+		if a.story:
+			continue                               # story.gd decides whom these wolves hunt
 		var info: Dictionary = L.ANIMALS[a.kind]
 		var gp: Vector3 = a.global_position
 		var dp := Vector2(gp.x - pp.x, gp.z - pp.z).length()
@@ -694,7 +696,7 @@ func _attack_player(a) -> void:
 	if GameState.lives <= 0:
 		message.emit("أسقطك %s! تعود إلى المنزل بأرواح جديدة" % L.ANIMALS[a.kind]["name"])
 		for o in animals:
-			if is_instance_valid(o) and o.predator:
+			if is_instance_valid(o) and o.predator and not o.story:
 				o.leave_t = 15.0
 		player_down.emit()
 	else:

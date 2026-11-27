@@ -15,6 +15,8 @@ const WellS := preload("res://scripts/well.gd")
 const PondS := preload("res://scripts/pond.gd")
 const FishS := preload("res://scripts/fishing.gd")
 const WeatherS := preload("res://scripts/weather.gd")
+const TowerS := preload("res://scripts/tower.gd")
+const StoryS := preload("res://scripts/story.gd")
 const WL := preload("res://scripts/weather_logic.gd")
 
 var world
@@ -29,6 +31,8 @@ var well
 var pond
 var fishing
 var weather
+var tower
+var story
 var sleeping := false
 var sfx
 var _cluck_t := 4.0
@@ -211,6 +215,48 @@ func _smoke() -> void:
 	weather.strength = 0.0
 	GameState.clock_hours = clock0
 	print("SMOKE weather OK")
+	var saved_placed: Dictionary = GameState.placed.duplicate()
+	var t1: int = builder.index_of("T_1")
+	var t2: int = builder.index_of("T_2")
+	var rd: int = builder.index_of("R_dock")
+	for rp0 in builder.boards[rd].pieces:
+		GameState.placed.erase(rp0.id)
+	var chain_a: bool = builder.available(t1)
+	for rp1 in builder.boards[rd].pieces:
+		GameState.placed[rp1.id] = true
+	var chain_b: bool = builder.available(t1) and not builder.available(t2)
+	for tp1 in builder.boards[t1].pieces:
+		GameState.placed[tp1.id] = true
+	var chain_c: bool = builder.available(t2)
+	GameState.placed = saved_placed
+	if chain_a or not chain_b or not chain_c:
+		print("SMOKE FAIL: tower stage order ", chain_a, chain_b, chain_c)
+		get_tree().quit(1)
+		return
+	print("SMOKE tower OK")
+	var sc0: int = GameState.story_stage
+	var cb1: int = builder.index_of("C_1")
+	GameState.story_stage = 1
+	var story_closed: bool = not builder.available(cb1)
+	GameState.story_stage = 2
+	var story_open: bool = builder.available(cb1) and not builder.available(builder.index_of("C_2"))
+	GameState.story_stage = sc0
+	if not story_closed or not story_open or story == null:
+		print("SMOKE FAIL: story / cabin gating ", story_closed, story_open)
+		get_tree().quit(1)
+		return
+	var npc_t = load("res://scripts/npc.gd").new()
+	npc_t.setup("girl", 0)
+	add_child(npc_t)
+	npc_t.animate(0.1, 4.0, "scared")
+	npc_t.hit(1000.0)
+	npc_t.animate(0.1, 0.0, "idle")
+	if not npc_t.dead:
+		print("SMOKE FAIL: npc death")
+		get_tree().quit(1)
+		return
+	npc_t.queue_free()
+	print("SMOKE story OK")
 	GameState.hunt_stage = 3
 	GameState.farm_built = true
 	var dd = hunt.first_of("deer")
@@ -446,6 +492,11 @@ func _start(is_new: bool) -> void:
 	well.message.connect(func(t): ui.toast(t, 4.0))
 	well.action.connect(func(a): player.play_action(a, 1.2))
 	farm.harvested.connect(well.on_harvest)
+	tower = TowerS.new()
+	tower.builder = builder
+	tower.player = player
+	add_child(tower)
+	tower.message.connect(func(t): ui.toast(t, 4.5))
 	var forage := ForageS.new()
 	forage.world = world
 	add_child(forage)
@@ -458,6 +509,15 @@ func _start(is_new: bool) -> void:
 	hunt.aim_color_changed.connect(ui.set_crosshair_color)
 	hunt.player_hurt.connect(func(): sfx.play("hit", -2.0))
 	hunt.player_down.connect(_on_player_down)
+	tower.hunt = hunt
+	story = StoryS.new()
+	story.builder = builder
+	story.player = player
+	story.hunt = hunt
+	story.world = world
+	story.tower = tower
+	add_child(story)
+	story.message.connect(func(t): ui.toast(t, 5.0))
 	hunt.gate_open_cb = func(): return builder.is_open("farm")
 	hunt.pond = pond
 	hunt.scope_changed.connect(ui.set_scope_mode)
@@ -616,6 +676,7 @@ func _on_action(a: String) -> void:
 		"hint": _hint()
 		"torch": _torch()
 		"coat": _craft_coat()
+		"pause": ui.show_menu(GameState.has_save())
 		"home": _go_home()
 		"save":
 			if _save():
@@ -638,6 +699,9 @@ func _craft_coat() -> void:
 
 func _open_build() -> void:
 	var bi: int = builder.current_index()
+	var cb: int = story.cabin_board_near(player.global_position)
+	if cb >= 0:
+		bi = cb                                    # beside the cabin site the cabin is the current job
 	if bi < 0:
 		ui.toast("اكتمل المنزل والسور!")
 		return
@@ -756,6 +820,8 @@ func _on_player_down() -> void:
 func _interact() -> void:
 	if hunt.try_deliver():
 		return
+	if tower.interact(player.global_position):
+		return
 	if well.interact(player.global_position):
 		return
 	if fishing.interact(player.global_position):
@@ -870,15 +936,25 @@ func _hud() -> void:
 	_equip_text()
 	var g := GameState
 	var q := ""
+	var prog := ""
 	var bi: int = builder.current_index()
 	if bi < 0:
 		q = "اصطد واحصل على حيوان حي لفتح الحظيرة (أصِب الساق ثم تفاعل)" if not GameState.barn_unlocked else "الحظيرة جاهزة: أطعم الحيوانات كل يوم (اقترب واضغط «تفاعل»)"
 	else:
 		var b: Dictionary = builder.boards[bi]
 		var cost: String = builder.next_cost(bi)
-		q = "%s — متبقي %d قطعة — لديك %d %s. اجمع ثم اضغط «بناء»" % [b.name, builder.remaining(bi), g.count(cost), "حجارة" if cost == "stone" else "خشب"]
+		q = "%s — اجمع %s ثم اضغط «بناء»" % [b.name, "الحجارة" if cost == "stone" else "الخشب"]
+		prog = "متبقي %d قطعة  |  لديك %d" % [builder.remaining(bi), g.count(cost)]
 	var hr := int(g.time_of_day)
-	ui.set_stats({"time": "%02d:%02d" % [hr, int((g.time_of_day - hr) * 60.0)], "wood": g.count("wood"), "stone": g.count("stone"), "apples": g.count("apples"), "meat": g.count("meat"), "fish": g.count("fish"), "pelt": g.count("pelt"), "level": g.level()})
+	var sq: String = story.quest_text()
+	if sq != "" and (GameState.story_stage < 3 or bi < 0):
+		q = sq
+		prog = ""
+		if GameState.story_stage == 2:
+			var cbi: int = story.cabin_board_index()
+			if cbi >= 0:
+				prog = "متبقي %d قطعة  |  لديك %d" % [builder.remaining(cbi), g.count(builder.next_cost(cbi))]
+	ui.set_stats({"time": "%02d:%02d" % [hr, int((g.time_of_day - hr) * 60.0)], "xp": g.xp, "wood": g.count("wood"), "stone": g.count("stone"), "apples": g.count("apples"), "meat": g.count("meat"), "fish": g.count("fish"), "pelt": g.count("pelt"), "level": g.level()})
 	ui.set_lives(g.lives, g.max_lives())
 	var res := ""
 	if g.count("seeds") + g.count("gseeds") + g.count("hay") + g.count("milk") > 0:
@@ -909,7 +985,21 @@ func _hud() -> void:
 	ui.set_hunt(hunt.weapon_text() + ("\n" + tt if tt != "" else ""))
 	ui.set_speed_visible(tt != "")
 	res += "\n" + WL.hud_text(GameState.clock_hours)
-	ui.set_hud(res, q)
+	ui.set_hud(res, q, prog)
+	if ui.minimap.player == null:
+		ui.minimap.player = player
+		ui.minimap.hunt = hunt
+		ui.minimap.features = [
+			{"p": Vector2(0, 0), "c": Color(0.7, 0.45, 0.25), "s": 5.0},
+			{"p": Vector2(barn.farm_center.x, barn.farm_center.z), "c": Color(0.35, 0.55, 0.2), "s": 5.0},
+			{"p": Vector2(barn.barn_center.x, barn.barn_center.z), "c": Color(0.6, 0.25, 0.2), "s": 4.0},
+			{"p": Vector2(WellS.POS.x, WellS.POS.z), "c": Color(0.6, 0.6, 0.65), "s": 3.0},
+			{"p": Vector2(-21.0, 39.0), "c": Color(0.85, 0.75, 0.5), "s": 4.0},
+			{"p": Vector2(-9.0, 39.0), "c": Color(0.6, 0.4, 0.25), "s": 3.0}]
+	ui.minimap.story = story
+	ui.minimap.range_m = 115.0 if tower.done() else 75.0
+	tower.watch(0.25, player.global_position)
+	ui.minimap.queue_redraw()
 
 ## Hint for the interact button: what pressing it would do right here.
 func _prompt() -> String:
@@ -918,6 +1008,9 @@ func _prompt() -> String:
 	var pos: Vector3 = player.global_position
 	if hunt.near_barn() and not hunt.drag_busy:
 		return "تفاعل: فكّ الحيوان داخل المزرعة"
+	var th: String = tower.hint(pos)
+	if th != "":
+		return th
 	var wh: String = well.hint(pos)
 	if wh != "":
 		return wh
