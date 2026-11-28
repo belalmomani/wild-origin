@@ -407,7 +407,8 @@ static func cabin_boards() -> Array:
 		var tgt: Array = low if r < 4 else high
 		var tn := Color(0.56, 0.36, 0.2) if r % 2 == 0 else Color(0.5, 0.32, 0.18)
 		for sz in [-1.0, 1.0]:                                        # long walls (north / south)
-			tgt.append(_b(Vector3(6.0, 0.28, 0.4), c + Vector3(0, y, sz * hz), "wood", {"tint": tn}))
+			for hxs in [-1.5, 1.5]:
+				tgt.append(_b(Vector3(3.0, 0.28, 0.4), c + Vector3(hxs, y, sz * hz), "wood", {"tint": tn}))
 		if r >= 3 and r <= 5:                                          # window gap in the back wall
 			for sz in [-1.0, 1.0]:
 				tgt.append(_b(Vector3(0.4, 0.28, 1.7), c + Vector3(hx, y, sz * 1.35), "wood", {"tint": tn}))
