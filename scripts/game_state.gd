@@ -205,8 +205,8 @@ func from_dict(d: Dictionary) -> void:
 		story_stage = 0                       # an interrupted rescue starts again
 	var sa: Array = d.get("salive", [true, true, true])
 	story_alive = [true, true, true]
-	for i in mini(3, sa.size()):
-		story_alive[i] = bool(sa[i])
+	for si in mini(3, sa.size()):
+		story_alive[si] = bool(sa[si])
 	story_clock = float(d.get("sclk", -1.0))
 	pond = clampf(float(d.get("pond", 0.0)), 0.0, 1.0)
 	channel = bool(d.get("channel", false))
