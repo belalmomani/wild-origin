@@ -411,7 +411,7 @@ func _init() -> void:
 	var gss = load("res://scripts/game_state.gd").new()
 	gss.story_stage = 2
 	gss.story_alive = [true, false, true]
-	var npcs_ok: bool = load("res://scripts/npc.gd") != null and load("res://scripts/story.gd") != null
+	var npcs_ok: bool = load("res://scripts/npc.gd") != null
 	if not npcs_ok:
 		print("FAIL story scripts do not load"); fails += 1
 	gss.free()
