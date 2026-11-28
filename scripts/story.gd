@@ -167,7 +167,7 @@ func _nearest_npc(pos: Vector3):
 
 func _chapter_frame(d: float) -> void:
 	var pp: Vector3 = player.global_position
-	var safe := Vector2(pp.x, pp.z).length() < L.SAFE_R or hunt.grace_t > 0.0
+	var safe: bool = Vector2(pp.x, pp.z).length() < L.SAFE_R or hunt.grace_t > 0.0
 	# --- wolves
 	var wolves_left := 0
 	for i in wolves.size():
